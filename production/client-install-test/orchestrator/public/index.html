@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MES HAI Gateway</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Segoe UI,Arial,sans-serif;background:#f0f2f5;color:#222;font-size:14px}
+header{background:#1a3a5c;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px}
+header h1{font-size:18px;font-weight:600;letter-spacing:.5px}
+#station-badge{background:#2a5298;border-radius:4px;padding:3px 10px;font-size:12px;color:#a8d4ff}
+nav{background:#fff;border-bottom:2px solid #1a3a5c;display:flex;gap:0}
+nav button{border:none;background:none;padding:10px 22px;font-size:14px;cursor:pointer;color:#555;border-bottom:3px solid transparent;transition:.15s}
+nav button.active{color:#1a3a5c;border-bottom-color:#1a3a5c;font-weight:600}
+nav button:hover:not(.active){background:#f5f7fa}
+.tab{display:none;padding:20px}
+.tab.active{display:block}
+.card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.1);padding:18px;margin-bottom:16px}
+.card h2{font-size:15px;color:#1a3a5c;margin-bottom:14px;border-bottom:1px solid #e8ecf0;padding-bottom:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.stat-box{background:#f5f7fa;border-radius:6px;padding:12px;text-align:center}
+.stat-box .val{font-size:22px;font-weight:700;color:#1a3a5c}
+.stat-box .lbl{font-size:11px;color:#888;margin-top:2px}
+.badge{display:inline-block;border-radius:12px;padding:3px 10px;font-size:12px;font-weight:600}
+.badge.ok{background:#d4edda;color:#155724}
+.badge.err{background:#f8d7da;color:#721c24}
+.badge.warn{background:#fff3cd;color:#856404}
+.badge.info{background:#d1ecf1;color:#0c5460}
+label{display:block;font-size:12px;color:#555;margin-bottom:4px;font-weight:500}
+input,select{width:100%;border:1px solid #cdd3db;border-radius:5px;padding:7px 10px;font-size:13px;color:#222;background:#fff}
+input:focus,select:focus{outline:none;border-color:#2a5298;box-shadow:0 0 0 2px rgba(42,82,152,.15)}
+.row{margin-bottom:12px}
+.btn{border:none;border-radius:5px;padding:8px 18px;font-size:13px;cursor:pointer;font-weight:600;transition:.15s}
+.btn-primary{background:#1a3a5c;color:#fff}
+.btn-primary:hover{background:#2a5298}
+.btn-success{background:#28a745;color:#fff}
+.btn-success:hover{background:#218838}
+.btn-danger{background:#dc3545;color:#fff}
+.btn-danger:hover{background:#c82333}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn-outline{background:#fff;border:1px solid #cdd3db;color:#444}
+.btn-outline:hover{background:#f5f7fa}
+#toast{position:fixed;top:16px;right:20px;padding:10px 18px;border-radius:6px;font-weight:600;display:none;z-index:999;font-size:13px}
+#toast.ok{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
+#toast.err{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
+.json-box{background:#1e1e2e;color:#a8b2d8;border-radius:6px;padding:14px;font-family:Consolas,monospace;font-size:12px;overflow:auto;max-height:380px;white-space:pre-wrap;word-break:break-all}
+.json-box .key{color:#79b8ff}
+.json-box .str{color:#9ecbff}
+.json-box .num{color:#f8c555}
+.json-box .bool{color:#f97583}
+.json-box .null{color:#f97583}
+.err-banner{background:#f8d7da;border:1px solid #f5c6cb;border-radius:6px;padding:12px;color:#721c24;font-size:13px}
+.err-banner .code{font-size:22px;font-weight:700;margin-right:8px}
+.log-table{width:100%;border-collapse:collapse;font-size:12px}
+.log-table th{background:#f0f2f5;padding:6px 10px;text-align:left;border-bottom:2px solid #dee2e6;color:#555;font-weight:600}
+.log-table td{padding:5px 10px;border-bottom:1px solid #f0f2f5;vertical-align:top}
+.log-table tr:hover td{background:#f8f9ff}
+.log-row-error td{background:#fff5f5}
+.log-row-warn td{background:#fffef0}
+.log-row-info td{}
+.ts-col{color:#888;white-space:nowrap;width:160px}
+.level-col{width:60px}
+.msg-col{color:#333}
+.det-col{color:#666;font-size:11px;max-width:300px;word-break:break-all}
+.log-wrap{max-height:480px;overflow-y:auto;border:1px solid #dee2e6;border-radius:6px}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.sep{width:1px;height:20px;background:#dee2e6}
+#log-live-dot{width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;margin-right:4px}
+#log-live-dot.on{background:#28a745;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.action-form{display:none}
+.action-form.active{display:block}
+.result-section{margin-top:16px}
+.error-detail-highlight{border:2px solid #dc3545;border-radius:6px;padding:12px;background:#fff5f5;margin-bottom:12px}
+.error-detail-highlight .ed-code{font-size:24px;font-weight:700;color:#dc3545}
+.error-detail-highlight .ed-desc{color:#721c24;margin-top:4px}
+.error-detail-highlight .ed-action{margin-top:6px;font-size:12px;color:#555;background:#fff;border-radius:4px;padding:4px 8px;display:inline-block}
+.ok-detail-highlight{border:2px solid #28a745;border-radius:6px;padding:12px;background:#f0fff4;margin-bottom:12px}
+.ok-detail-highlight .ed-code{font-size:24px;font-weight:700;color:#28a745}
+.steps-list{list-style:none;margin:0;padding:0}
+.steps-list li{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f2f5;font-size:12px}
+.steps-list li:last-child{border:none}
+.step-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.step-dot.ok{background:#28a745}
+.step-dot.fail{background:#dc3545}
+.field-group{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:600px){.grid2,.grid3,.field-group{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MES HAI Gateway</h1>
+  <span id="station-badge">Station: —</span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+    <div style="display:flex;align-items:center;gap:6px;background:#0d2440;border-radius:20px;padding:4px 6px">
+      <button id="btn-mock" onclick="switchMode('mock')" style="border:none;border-radius:16px;padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;background:#2a5298;color:#fff;transition:.2s">
+        Local Mock
+      </button>
+      <button id="btn-real" onclick="switchMode('real')" style="border:none;border-radius:16px;padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:#6a9fd8;transition:.2s">
+        Réseau Visteon
+      </button>
+    </div>
+    <span id="header-status" class="badge">...</span>
+  </div>
+</header>
+
+<nav>
+  <button class="active" onclick="showTab('status')">Statut</button>
+  <button onclick="showTab('config')">Configuration</button>
+  <button onclick="showTab('test')">Mode Test</button>
+  <button onclick="showTab('logs')">Logs</button>
+</nav>
+
+<div id="toast"></div>
+
+<!-- ═══════════════ TAB: STATUS ═══════════════ -->
+<div id="tab-status" class="tab active">
+  <div class="grid3">
+    <div class="card">
+      <h2>Service</h2>
+      <div class="stat-box">
+        <div class="val" id="s-uptime">—</div>
+        <div class="lbl">Uptime (sec)</div>
+      </div>
+      <div style="margin-top:10px;text-align:center">
+        <span id="s-status" class="badge">—</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Fichiers</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div>Bridge EXE <span id="s-exe" class="badge">—</span></div>
+        <div>MES_HAI.dll <span id="s-dll" class="badge">—</span></div>
+        <div>MES_HAI.xml <span id="s-xml" class="badge">—</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Dernier Login</h2>
+      <div id="s-last-login" style="color:#888;font-size:12px">Aucun</div>
+    </div>
+  </div>
+
+  <div class="card" id="s-error-card" style="display:none">
+    <h2>Derniere Erreur</h2>
+    <div id="s-last-error" class="err-banner"></div>
+  </div>
+
+  <div style="text-align:right;margin-top:-8px">
+    <button class="btn btn-outline btn-sm" onclick="loadHealth()">Actualiser</button>
+    <span style="font-size:11px;color:#999;margin-left:8px">Auto-refresh 5s</span>
+  </div>
+</div>
+
+<!-- ═══════════════ TAB: CONFIG ═══════════════ -->
+<div id="tab-config" class="tab">
+  <div class="card">
+    <h2>Configuration Station</h2>
+    <div class="field-group">
+      <div class="row"><label>Station Name *</label><input id="c-station" type="text" placeholder="ex: STATION_01"></div>
+      <div class="row"><label>Instance Name</label><input id="c-instance" type="text" placeholder="MES_HAI"></div>
+    </div>
+    <div class="row"><label>Bridge EXE Path</label><input id="c-bridge-exe" type="text" placeholder="C:\MESApps\..."></div>
+    <div class="row"><label>MES_HAI.dll Path</label><input id="c-dll-path" type="text" placeholder="C:\MESApps\..."></div>
+    <div class="row"><label>MES_HAI.xml Path</label><input id="c-xml-path" type="text" placeholder="C:\ProgramData\MESApps\CIM\MES_HAI.xml"></div>
+    <div class="field-group">
+      <div class="row"><label>Port HTTP</label><input id="c-port" type="number" placeholder="7070"></div>
+      <div class="row"><label>Bridge Timeout (ms)</label><input id="c-timeout" type="number" placeholder="20000"></div>
+    </div>
+    <div class="row"><label>Log Directory</label><input id="c-logdir" type="text" placeholder="C:\MESApps\...\logs"></div>
+    <div class="row"><label>Log File Name</label><input id="c-logfile" type="text" placeholder="mes-orchestrator.log"></div>
+    <div class="field-group">
+      <div class="row">
+        <label>Layer par defaut</label><input id="c-layer" type="number" placeholder="0">
+      </div>
+      <div class="row">
+        <label>Activate Work Order</label>
+        <select id="c-awo">
+          <option value="true">true</option>
+          <option value="false">false</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:4px;padding:8px;background:#f5f7fa;border-radius:4px;font-size:11px;color:#777">
+      Fichier config: <span id="c-filepath" style="font-family:monospace">—</span>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px">
+      <button class="btn btn-primary" onclick="saveConfig()">Enregistrer</button>
+      <button class="btn btn-outline" onclick="loadConfig()">Recharger</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Verifier les chemins</h2>
+    <div style="font-size:12px;color:#666;margin-bottom:10px">
+      Apres modification, verifiez que les fichiers existent sur ce poste.
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="loadHealth()">Verifier maintenant</button>
+    <div id="c-check-result" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ TAB: TEST ═══════════════ -->
+<div id="tab-test" class="tab">
+  <div class="card" style="margin-bottom:16px">
+    <h2>Serveurs MES cibles</h2>
+    <div id="t-servers-content" style="color:#888;font-size:12px">Chargement...</div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h2>Appel MES Manuel</h2>
+      <div class="row">
+        <label>Action</label>
+        <select id="t-action" onchange="onActionChange()">
+          <option value="login">Login</option>
+          <option value="get-info">Get Info (serie)</option>
+          <option value="move-in">Move In (flux complet)</option>
+          <option value="move-out-and-test">Move Out + Test Results</option>
+          <option value="bridge">Bridge direct (raw)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Station (vide = config)</label>
+        <input id="t-station" type="text" placeholder="Utiliser config par defaut">
+      </div>
+
+      <!-- Login -->
+      <div id="form-login" class="action-form active">
+        <div class="row"><label>User (optionnel)</label><input id="t-user" type="text" placeholder="laisser vide si non requis"></div>
+        <div class="row"><label>Password (optionnel)</label><input id="t-password" type="password"></div>
+      </div>
+
+      <!-- Get Info -->
+      <div id="form-get-info" class="action-form">
+        <div class="row"><label>Serial Number *</label><input id="t-serial-gi" type="text" placeholder="SN0001"></div>
+      </div>
+
+      <!-- Move In -->
+      <div id="form-move-in" class="action-form">
+        <div class="row"><label>Serial Number *</label><input id="t-serial-mi" type="text" placeholder="SN0001"></div>
+        <div class="row"><label>Expected Part Number (optionnel)</label><input id="t-partno" type="text"></div>
+        <div class="field-group">
+          <div class="row"><label>Layer</label><input id="t-layer-mi" type="number" value="0"></div>
+          <div class="row"><label>Activate Work Order</label>
+            <select id="t-awo-mi"><option value="">config</option><option value="true">true</option><option value="false">false</option></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Move Out + Test -->
+      <div id="form-move-out-and-test" class="action-form">
+        <div class="row"><label>Serial Number *</label><input id="t-serial-mot" type="text" placeholder="SN0001"></div>
+        <div class="field-group">
+          <div class="row"><label>Result</label>
+            <select id="t-result-mot">
+              <option value="Pass">Pass</option>
+              <option value="Fail">Fail</option>
+              <option value="Scrap">Scrap</option>
+            </select>
+          </div>
+          <div class="row"><label>Layer</label><input id="t-layer-mot" type="number" value="0"></div>
+        </div>
+        <div class="field-group">
+          <div class="row"><label>Group ID</label><input id="t-gid" type="text" placeholder=""></div>
+          <div class="row"><label>Group Version</label><input id="t-gver" type="text" placeholder=""></div>
+        </div>
+        <div class="row">
+          <label>Mesures JSON (tableau, optionnel)</label>
+          <textarea id="t-measures" rows="3" style="width:100%;border:1px solid #cdd3db;border-radius:5px;padding:7px;font-size:12px;font-family:monospace;resize:vertical" placeholder='[{"Position":1,"MeasureKey":"R1","MeasureValue":5.2,"Result":"Pass"}]'></textarea>
+        </div>
+      </div>
+
+      <!-- Bridge raw -->
+      <div id="form-bridge" class="action-form">
+        <div class="row">
+          <label>Payload JSON complet</label>
+          <textarea id="t-raw-payload" rows="6" style="width:100%;border:1px solid #cdd3db;border-radius:5px;padding:7px;font-size:12px;font-family:monospace;resize:vertical" placeholder='{"action":"login","station":"ST01"}'></textarea>
+        </div>
+      </div>
+
+      <div style="margin-top:8px;display:flex;gap:10px;align-items:center">
+        <button class="btn btn-primary" onclick="runTest()">Executer</button>
+        <button class="btn btn-outline btn-sm" onclick="clearResult()">Effacer</button>
+        <span id="t-spinner" style="display:none;color:#888;font-size:12px">En cours...</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Resultat</h2>
+      <div id="t-error-detail"></div>
+      <div id="t-steps"></div>
+      <div id="t-result-box" class="json-box" style="min-height:120px">En attente d'execution...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ TAB: LOGS ═══════════════ -->
+<div id="tab-logs" class="tab">
+  <div class="card">
+    <div class="toolbar">
+      <button class="btn btn-outline btn-sm" onclick="setLevelFilter('all')" id="lf-all">Tous</button>
+      <button class="btn btn-outline btn-sm" onclick="setLevelFilter('info')" id="lf-info">Info</button>
+      <button class="btn btn-outline btn-sm" onclick="setLevelFilter('warn')" id="lf-warn">Warn</button>
+      <button class="btn btn-outline btn-sm" onclick="setLevelFilter('error')" id="lf-err">Error</button>
+      <div class="sep"></div>
+      <button class="btn btn-outline btn-sm" onclick="toggleLive()" id="btn-live">
+        <span id="log-live-dot"></span>Live
+      </button>
+      <button class="btn btn-outline btn-sm" onclick="loadLogs()">Actualiser</button>
+      <button class="btn btn-outline btn-sm" onclick="clearLogDisplay()">Vider affichage</button>
+      <span id="log-count" style="font-size:11px;color:#999;margin-left:auto"></span>
+    </div>
+    <div class="log-wrap" id="log-container">
+      <table class="log-table">
+        <thead><tr>
+          <th class="ts-col">Timestamp</th>
+          <th class="level-col">Level</th>
+          <th class="msg-col">Message</th>
+          <th class="det-col">Détails</th>
+        </tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:#aaa;margin-top:6px">Fichier: <span id="log-path">—</span></div>
+  </div>
+</div>
+
+<script>
+const BASE = '';
+let logLevelFilter = 'all';
+let liveMode = false;
+let liveSource = null;
+let healthTimer = null;
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  const idx = {status:0,config:1,test:2,logs:3}[name];
+  document.querySelectorAll('nav button')[idx].classList.add('active');
+  if (name === 'status') loadHealth();
+  if (name === 'config') loadConfig();
+  if (name === 'test') loadMesServers();
+  if (name === 'logs') loadLogs();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = type;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+// ── Health / Status ───────────────────────────────────────────────────────────
+async function loadHealth() {
+  try {
+    const r = await fetch(`${BASE}/health`);
+    const d = await r.json();
+    document.getElementById('s-uptime').textContent = d.uptimeSec ?? '—';
+    document.getElementById('station-badge').textContent = 'Station: ' + (d.stationName || '—');
+    const st = document.getElementById('s-status');
+    st.textContent = d.ok ? 'OK' : 'ERREUR';
+    st.className = 'badge ' + (d.ok ? 'ok' : 'err');
+    document.getElementById('header-status').textContent = d.ok ? 'En ligne' : 'Hors ligne';
+    document.getElementById('header-status').className = 'badge ' + (d.ok ? 'ok' : 'err');
+    if (d.testMode) applyModeUI(d.testMode);
+    const exeEl = document.getElementById('s-exe');
+    exeEl.textContent = d.bridgeExeExists === null ? 'N/A (mock)' : d.bridgeExeExists ? 'OK' : 'ABSENT';
+    exeEl.className = 'badge ' + (d.bridgeExeExists === null ? 'info' : d.bridgeExeExists ? 'ok' : 'err');
+    const dllEl = document.getElementById('s-dll');
+    dllEl.textContent = d.dllExists === null ? 'N/A (mock)' : d.dllExists ? 'OK' : 'ABSENT';
+    dllEl.className = 'badge ' + (d.dllExists === null ? 'info' : d.dllExists ? 'ok' : 'err');
+    const xmlEl = document.getElementById('s-xml');
+    xmlEl.textContent = d.xmlExists ? 'OK' : 'ABSENT';
+    xmlEl.className = 'badge ' + (d.xmlExists ? 'ok' : 'err');
+    const ll = document.getElementById('s-last-login');
+    if (d.lastLogin) {
+      ll.innerHTML = `<span class="badge ${d.lastLogin.ok ? 'ok' : 'err'}">${d.lastLogin.ok ? 'OK' : 'FAIL'}</span> ${d.lastLogin.station} — ${fmtTs(d.lastLogin.ts)}`;
+    }
+    const errCard = document.getElementById('s-error-card');
+    if (d.lastError) {
+      errCard.style.display = '';
+      document.getElementById('s-last-error').innerHTML = `<strong>${d.lastError.message || JSON.stringify(d.lastError)}</strong><br><small>${fmtTs(d.lastError.ts)}</small>`;
+    } else {
+      errCard.style.display = 'none';
+    }
+    // also update config check
+    const ccr = document.getElementById('c-check-result');
+    if (ccr) {
+      const exeBadge = d.bridgeExeExists === null ? 'info' : d.bridgeExeExists ? 'ok' : 'err';
+      const exeLabel = d.bridgeExeExists === null ? 'N/A (mock)' : d.bridgeExeExists ? 'Trouvé' : 'ABSENT';
+      const dllBadge = d.dllExists === null ? 'info' : d.dllExists ? 'ok' : 'err';
+      const dllLabel = d.dllExists === null ? 'N/A (mock)' : d.dllExists ? 'Trouvée' : 'ABSENTE';
+      const xmlBadge = d.xmlExists ? 'ok' : 'err';
+      const xmlLabel = d.xmlExists ? 'Trouvé' : 'ABSENT';
+      ccr.innerHTML = `Bridge EXE: <span class="badge ${exeBadge}">${exeLabel}</span>&nbsp;&nbsp;`
+        + `MES_HAI.dll: <span class="badge ${dllBadge}">${dllLabel}</span>&nbsp;&nbsp;`
+        + `MES_HAI.xml: <span class="badge ${xmlBadge}">${xmlLabel}</span>`;
+    }
+  } catch(e) {
+    document.getElementById('s-status').textContent = 'OFFLINE';
+    document.getElementById('s-status').className = 'badge err';
+    document.getElementById('header-status').textContent = 'Hors ligne';
+    document.getElementById('header-status').className = 'badge err';
+  }
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+async function loadConfig() {
+  try {
+    const r = await fetch(`${BASE}/api/config`);
+    const d = await r.json();
+    const c = d.config || {};
+    document.getElementById('c-station').value = c.stationName || '';
+    document.getElementById('c-instance').value = c.haiInstanceName || '';
+    document.getElementById('c-bridge-exe').value = c.bridgeExePath || '';
+    document.getElementById('c-dll-path').value = c.haiDllPath || '';
+    document.getElementById('c-xml-path').value = c.haiXmlPath || '';
+    document.getElementById('c-port').value = c.port || '';
+    document.getElementById('c-timeout').value = c.bridgeTimeoutMs || '';
+    document.getElementById('c-logdir').value = c.logDir || '';
+    document.getElementById('c-logfile').value = c.logFileName || '';
+    document.getElementById('c-layer').value = c.defaultLayer ?? 0;
+    document.getElementById('c-awo').value = c.defaultActivateWorkOrder ? 'true' : 'false';
+    document.getElementById('c-filepath').textContent = d.configPath || '—';
+    document.getElementById('station-badge').textContent = 'Station: ' + (c.stationName || '—');
+  } catch(e) { toast('Impossible de charger la config: ' + e.message, 'err'); }
+}
+
+async function saveConfig() {
+  const payload = {
+    stationName: document.getElementById('c-station').value.trim(),
+    haiInstanceName: document.getElementById('c-instance').value.trim() || 'MES_HAI',
+    bridgeExePath: document.getElementById('c-bridge-exe').value.trim(),
+    haiDllPath: document.getElementById('c-dll-path').value.trim(),
+    haiXmlPath: document.getElementById('c-xml-path').value.trim(),
+    port: parseInt(document.getElementById('c-port').value) || 7070,
+    bridgeTimeoutMs: parseInt(document.getElementById('c-timeout').value) || 20000,
+    logDir: document.getElementById('c-logdir').value.trim(),
+    logFileName: document.getElementById('c-logfile').value.trim() || 'mes-orchestrator.log',
+    defaultLayer: parseInt(document.getElementById('c-layer').value) || 0,
+    defaultActivateWorkOrder: document.getElementById('c-awo').value === 'true',
+  };
+  if (!payload.stationName) { toast('Station Name est obligatoire', 'err'); return; }
+  try {
+    const r = await fetch(`${BASE}/api/config`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    const d = await r.json();
+    if (d.ok) { toast('Configuration enregistree'); document.getElementById('station-badge').textContent = 'Station: ' + payload.stationName; }
+    else toast('Erreur: ' + JSON.stringify(d), 'err');
+  } catch(e) { toast('Erreur: ' + e.message, 'err'); }
+}
+
+// ── MES Servers ───────────────────────────────────────────────────────────────
+async function loadMesServers() {
+  const el = document.getElementById('t-servers-content');
+  try {
+    const r = await fetch(`${BASE}/api/mes-servers`);
+    const d = await r.json();
+    if (!d.xmlExists) {
+      el.innerHTML = `<span class="badge err">XML ABSENT</span> <span style="font-size:12px;color:#888">${esc(d.xmlPath || '—')}</span>`;
+      return;
+    }
+    if (!d.servers || d.servers.length === 0) {
+      el.innerHTML = `<span class="badge warn">Aucun serveur dans le XML</span> <span style="font-size:12px;color:#888">${esc(d.xmlPath)}</span>`;
+      return;
+    }
+    const rows = d.servers.map((s, i) =>
+      `<tr>
+        <td style="padding:6px 12px;font-weight:600;color:#888;font-size:12px">${i === 0 ? 'Primaire' : 'Secondaire'}</td>
+        <td style="padding:6px 12px;font-family:monospace;font-size:13px;color:#1a3a5c;font-weight:700">${esc(s.ip)}</td>
+        <td style="padding:6px 12px;font-family:monospace;font-size:13px">${esc(s.port)}</td>
+        <td style="padding:6px 12px;font-size:12px;color:#555">${esc(s.description)}</td>
+      </tr>`
+    ).join('');
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:6px">
+        <thead><tr style="background:#f0f2f5">
+          <th style="padding:5px 12px;text-align:left;font-size:11px;color:#888;font-weight:600">Role</th>
+          <th style="padding:5px 12px;text-align:left;font-size:11px;color:#888;font-weight:600">IP</th>
+          <th style="padding:5px 12px;text-align:left;font-size:11px;color:#888;font-weight:600">Port</th>
+          <th style="padding:5px 12px;text-align:left;font-size:11px;color:#888;font-weight:600">Description</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="font-size:11px;color:#aaa">Source: ${esc(d.xmlPath)}</div>`;
+  } catch(e) {
+    el.innerHTML = `<span class="badge err">Erreur</span> ${esc(e.message)}`;
+  }
+}
+
+// ── Test Mode ─────────────────────────────────────────────────────────────────
+function onActionChange() {
+  const val = document.getElementById('t-action').value;
+  document.querySelectorAll('.action-form').forEach(f => f.classList.remove('active'));
+  const map = { 'login':'form-login','get-info':'form-get-info','move-in':'form-move-in','move-out-and-test':'form-move-out-and-test','bridge':'form-bridge' };
+  const target = map[val];
+  if (target) document.getElementById(target).classList.add('active');
+}
+
+function clearResult() {
+  document.getElementById('t-result-box').textContent = 'En attente d\'execution...';
+  document.getElementById('t-error-detail').innerHTML = '';
+  document.getElementById('t-steps').innerHTML = '';
+}
+
+async function runTest() {
+  const action = document.getElementById('t-action').value;
+  const station = document.getElementById('t-station').value.trim() || undefined;
+  document.getElementById('t-spinner').style.display = '';
+  document.getElementById('t-error-detail').innerHTML = '';
+  document.getElementById('t-steps').innerHTML = '';
+
+  let url, payload, method = 'POST';
+  try {
+    if (action === 'bridge') {
+      url = '/v1/bridge';
+      const rawText = document.getElementById('t-raw-payload').value.trim();
+      payload = rawText ? JSON.parse(rawText) : {};
+    } else if (action === 'login') {
+      url = '/v1/login';
+      payload = { station, user: document.getElementById('t-user').value||undefined, password: document.getElementById('t-password').value||undefined };
+    } else if (action === 'get-info') {
+      url = '/v1/get-info';
+      payload = { station, serialNumber: document.getElementById('t-serial-gi').value.trim() };
+    } else if (action === 'move-in') {
+      url = '/v1/move-in';
+      const awoVal = document.getElementById('t-awo-mi').value;
+      payload = {
+        station,
+        serialNumber: document.getElementById('t-serial-mi').value.trim(),
+        expectedPartNumber: document.getElementById('t-partno').value.trim() || undefined,
+        layer: parseInt(document.getElementById('t-layer-mi').value)||0,
+        activateWorkOrder: awoVal ? awoVal === 'true' : undefined,
+      };
+    } else if (action === 'move-out-and-test') {
+      url = '/v1/move-out-and-test';
+      let measures = [];
+      const mText = document.getElementById('t-measures').value.trim();
+      if (mText) measures = JSON.parse(mText);
+      payload = {
+        station,
+        serialNumber: document.getElementById('t-serial-mot').value.trim(),
+        result: document.getElementById('t-result-mot').value,
+        layer: parseInt(document.getElementById('t-layer-mot').value)||0,
+        groupId: document.getElementById('t-gid').value.trim()||undefined,
+        groupVersion: document.getElementById('t-gver').value.trim()||undefined,
+        measures,
+      };
+    }
+
+    const r = await fetch(`${BASE}${url}`, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    const d = await r.json();
+
+    // ErrorDetail highlight
+    renderErrorDetail(d);
+    // Steps highlight (move-in)
+    if (d.steps) renderSteps(d.steps);
+    // Full JSON
+    document.getElementById('t-result-box').innerHTML = syntaxHighlight(JSON.stringify(d, null, 2));
+  } catch(e) {
+    document.getElementById('t-result-box').textContent = 'Erreur: ' + e.message;
+  } finally {
+    document.getElementById('t-spinner').style.display = 'none';
+  }
+}
+
+function classifyDesc(desc) {
+  const dl = (desc||'').toLowerCase();
+  if (dl.includes('notlogged')||dl.includes('not logged')) return 'RE-LOGIN requis';
+  if (dl.includes('notregistered')||dl.includes('station')) return 'Verifier config station';
+  if (dl.includes('timeout')||dl.includes('connection')||dl.includes('network')) return 'Verifier reseau / basculer serveur';
+  if (dl.includes('serialnotfound')||dl.includes('not found')) return 'Serial inconnu dans MES';
+  return 'Bloquer piece — creer incident';
+}
+
+function renderErrorDetail(d) {
+  const el = document.getElementById('t-error-detail');
+  // Global flow verdict
+  const allSteps = d.steps || [];
+  const hasSteps = allSteps.length > 0;
+  const flowOk = d.ok !== false;
+
+  // Find first failing step or errorDetail
+  let firstError = null;
+  for (const s of allSteps) {
+    const ed = s.response && s.response.errorDetail;
+    if (ed && ed.ErrorCode !== 0) { firstError = { step: s.step, ed }; break; }
+    if (!s.ok) { firstError = { step: s.step, ed: null }; break; }
+  }
+  if (!firstError) {
+    const topEd = d.errorDetail || (d.response && d.response.errorDetail);
+    if (topEd && topEd.ErrorCode !== 0) firstError = { step: null, ed: topEd };
+  }
+
+  if (!hasSteps && !d.errorDetail && !d.response) { el.innerHTML = ''; return; }
+
+  if (flowOk && !firstError) {
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:12px;background:#d4edda;border:2px solid #28a745;border-radius:8px;padding:12px 16px;margin-bottom:10px">
+      <span style="font-size:28px">✔</span>
+      <div>
+        <div style="font-size:16px;font-weight:700;color:#155724">PASS</div>
+        <div style="font-size:12px;color:#155724">Toutes les etapes completees — ErrorCode 0</div>
+      </div>
+    </div>`;
+  } else {
+    const ed = firstError && firstError.ed;
+    const code = ed ? ed.ErrorCode : '?';
+    const desc = ed ? ed.ErrorDescription : 'Etape echouee';
+    const stepLabel = firstError && firstError.step ? ` (etape: ${firstError.step})` : '';
+    const action = classifyDesc(desc);
+    el.innerHTML = `<div style="display:flex;align-items:flex-start;gap:12px;background:#f8d7da;border:2px solid #dc3545;border-radius:8px;padding:12px 16px;margin-bottom:10px">
+      <span style="font-size:28px;flex-shrink:0">✖</span>
+      <div style="flex:1">
+        <div style="font-size:16px;font-weight:700;color:#721c24">FAIL${stepLabel}</div>
+        <div style="font-size:13px;color:#721c24;margin-top:2px"><strong>ErrorCode ${code}</strong> — ${esc(desc)}</div>
+        <div style="margin-top:6px;background:#fff;border-radius:4px;padding:4px 10px;font-size:12px;color:#555;display:inline-block">
+          ⟶ ${action}
+        </div>
+      </div>
+    </div>`;
+  }
+}
+
+function renderSteps(steps) {
+  const el = document.getElementById('t-steps');
+  if (!steps || !steps.length) { el.innerHTML = ''; return; }
+
+  let html = `<div style="margin-bottom:10px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#f0f2f5">
+        <th style="padding:6px 10px;text-align:left;border-bottom:2px solid #dee2e6;width:30px">#</th>
+        <th style="padding:6px 10px;text-align:left;border-bottom:2px solid #dee2e6">Etape</th>
+        <th style="padding:6px 10px;text-align:left;border-bottom:2px solid #dee2e6">Statut</th>
+        <th style="padding:6px 10px;text-align:left;border-bottom:2px solid #dee2e6">ErrorCode</th>
+        <th style="padding:6px 10px;text-align:left;border-bottom:2px solid #dee2e6">Detail</th>
+      </tr></thead>
+      <tbody>`;
+
+  steps.forEach((s, i) => {
+    const ok = s.ok;
+    const ed = s.response && s.response.errorDetail;
+    const code = ed ? ed.ErrorCode : '—';
+    const desc = ed ? ed.ErrorDescription : '—';
+    const res = s.response && s.response.result;
+
+    // Extra detail per step type
+    let extraDetail = '';
+    if (s.step === 'get-info' && res && res.SerialInformation) {
+      const si = res.SerialInformation;
+      extraDetail = `PN: ${si.PartNumber||'—'} | WO: ${si.WorkOrder||'—'} | Status: ${si.Status||'—'}`;
+    } else if (s.step === 'move-in' && res && res.Result) {
+      extraDetail = `Result: ${res.Result.name||'—'} | ${res.ResultMessage||''} | WO: ${res.WorkOrderName||'—'}`;
+    } else if (s.step === 'login' && res) {
+      extraDetail = `State: ${res.name||'—'}`;
+    }
+
+    const flagColor = ok ? '#28a745' : '#dc3545';
+    const flagText = ok ? '✔ OK' : '✖ FAIL';
+    const rowBg = !ok ? 'background:#fff5f5' : (code !== 0 && code !== '—' ? 'background:#fffef0' : '');
+
+    html += `<tr style="${rowBg};border-bottom:1px solid #f0f2f5">
+      <td style="padding:6px 10px;color:#888">${i+1}</td>
+      <td style="padding:6px 10px;font-weight:600;color:#1a3a5c">${esc(s.step)}</td>
+      <td style="padding:6px 10px"><span style="background:${ok?'#d4edda':'#f8d7da'};color:${flagColor};border-radius:12px;padding:2px 10px;font-weight:700;font-size:11px">${flagText}</span></td>
+      <td style="padding:6px 10px;font-weight:700;color:${code===0||code==='—'?'#28a745':'#dc3545'}">${code}</td>
+      <td style="padding:6px 10px;color:#555;font-size:11px">${extraDetail ? esc(extraDetail) : esc(desc)}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+// ── Logs ──────────────────────────────────────────────────────────────────────
+function setLevelFilter(level) {
+  logLevelFilter = level;
+  document.querySelectorAll('[id^="lf-"]').forEach(b => b.style.fontWeight = 'normal');
+  const map = {all:'lf-all',info:'lf-info',warn:'lf-warn',error:'lf-err'};
+  const el = document.getElementById(map[level]);
+  if (el) el.style.fontWeight = 'bold';
+  loadLogs();
+}
+
+async function loadLogs() {
+  try {
+    const qs = logLevelFilter && logLevelFilter !== 'all' ? `?limit=300&level=${logLevelFilter}` : '?limit=300';
+    const r = await fetch(`${BASE}/api/logs${qs}`);
+    const d = await r.json();
+    document.getElementById('log-path').textContent = d.logPath || '—';
+    document.getElementById('log-count').textContent = `${d.count} lignes`;
+    renderLogs(d.lines || []);
+  } catch(e) { /* silently ignore */ }
+}
+
+function renderLogs(lines) {
+  const tbody = document.getElementById('log-body');
+  tbody.innerHTML = '';
+  lines.forEach(l => {
+    const tr = document.createElement('tr');
+    const lvl = l.level || 'raw';
+    if (lvl === 'error') tr.className = 'log-row-error';
+    else if (lvl === 'warn') tr.className = 'log-row-warn';
+    tr.innerHTML = `<td class="ts-col">${esc(fmtTs(l.ts))}</td>`
+      + `<td class="level-col"><span class="badge ${lvl==='error'?'err':lvl==='warn'?'warn':'info'}">${esc(lvl)}</span></td>`
+      + `<td class="msg-col">${esc(l.message||'')}</td>`
+      + `<td class="det-col">${l.details ? esc(typeof l.details==='string'?l.details:JSON.stringify(l.details)) : ''}</td>`;
+    tbody.appendChild(tr);
+  });
+  // scroll to bottom
+  const wrap = document.getElementById('log-container');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function clearLogDisplay() {
+  document.getElementById('log-body').innerHTML = '';
+  document.getElementById('log-count').textContent = '';
+}
+
+function toggleLive() {
+  if (liveMode) {
+    stopLive();
+  } else {
+    startLive();
+  }
+}
+
+function startLive() {
+  if (liveSource) liveSource.close();
+  liveSource = new EventSource(`${BASE}/api/logs/stream`);
+  liveSource.onmessage = (e) => {
+    try {
+      const entry = JSON.parse(e.data);
+      if (logLevelFilter !== 'all' && entry.level !== logLevelFilter) return;
+      const tbody = document.getElementById('log-body');
+      const tr = document.createElement('tr');
+      const lvl = entry.level || 'raw';
+      if (lvl === 'error') tr.className = 'log-row-error';
+      else if (lvl === 'warn') tr.className = 'log-row-warn';
+      tr.innerHTML = `<td class="ts-col">${esc(fmtTs(entry.ts))}</td>`
+        + `<td class="level-col"><span class="badge ${lvl==='error'?'err':lvl==='warn'?'warn':'info'}">${esc(lvl)}</span></td>`
+        + `<td class="msg-col">${esc(entry.message||'')}</td>`
+        + `<td class="det-col">${entry.details ? esc(typeof entry.details==='string'?entry.details:JSON.stringify(entry.details)) : ''}</td>`;
+      tbody.appendChild(tr);
+      const wrap = document.getElementById('log-container');
+      wrap.scrollTop = wrap.scrollHeight;
+    } catch(_) {}
+  };
+  liveMode = true;
+  document.getElementById('log-live-dot').className = 'on';
+  document.getElementById('btn-live').style.background = '#d4edda';
+}
+
+function stopLive() {
+  if (liveSource) { liveSource.close(); liveSource = null; }
+  liveMode = false;
+  document.getElementById('log-live-dot').className = '';
+  document.getElementById('btn-live').style.background = '';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtTs(ts) {
+  if (!ts) return '—';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString('fr-FR', {hour12:false});
+  } catch { return ts; }
+}
+
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
+    let cls = 'num';
+    if (/^"/.test(match)) { cls = /:$/.test(match) ? 'key' : 'str'; }
+    else if (/true|false/.test(match)) { cls = 'bool'; }
+    else if (/null/.test(match)) { cls = 'null'; }
+    return `<span class="${cls}">${esc(match)}</span>`;
+  });
+}
+
+// ── Mode switch ───────────────────────────────────────────────────────────────
+async function switchMode(mode) {
+  try {
+    const r = await fetch(`${BASE}/api/mode`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode}) });
+    const d = await r.json();
+    if (d.ok) {
+      applyModeUI(mode);
+      toast(`Mode ${mode === 'mock' ? 'Local Mock' : 'Réseau Visteon'} sauvegardé — Redémarrer le serveur pour appliquer`, mode === 'mock' ? 'ok' : 'ok');
+    }
+  } catch(e) { toast('Erreur switch mode: ' + e.message, 'err'); }
+}
+
+function applyModeUI(mode) {
+  const btnMock = document.getElementById('btn-mock');
+  const btnReal = document.getElementById('btn-real');
+  if (mode === 'mock') {
+    btnMock.style.background = '#2a5298'; btnMock.style.color = '#fff';
+    btnReal.style.background = 'transparent'; btnReal.style.color = '#6a9fd8';
+  } else {
+    btnReal.style.background = '#28a745'; btnReal.style.color = '#fff';
+    btnMock.style.background = 'transparent'; btnMock.style.color = '#6a9fd8';
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadHealth();
+healthTimer = setInterval(loadHealth, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "stationName": "STATION_NAME_HERE",
+  "haiXmlPath": "C:\\ProgramData\\MESApps\\CIM\\MES_HAI.xml",
+  "haiDllPath": "C:\\MESApps\\ClientGateway\\bridge\\MES_HAI.dll",
+  "haiInstanceName": "MES_HAI",
+  "relayConfigPath": "C:\\MESApps\\ClientGateway\\relay-gateway\\config\\relay-config.json",
+  "logDir": "C:\\MESApps\\ClientGateway\\logs",
+  "logFileName": "mes-relay-gateway.log"
+}

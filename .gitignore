@@ -1,0 +1,18 @@
+# .NET build outputs (regenerate with dotnet build/publish, or install scripts -BuildIfNeeded)
+**/bin/
+**/obj/
+**/publish/
+
+# Runtime logs
+**/logs/
+**/logs-test/
+**/Log/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Editor
+.vs/
+.vscode/

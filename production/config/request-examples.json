@@ -1,0 +1,40 @@
+{
+  "login": {
+    "action": "login",
+    "station": "STATION_01"
+  },
+  "getInfo": {
+    "action": "get-info",
+    "station": "STATION_01",
+    "serialNumber": "SN123456"
+  },
+  "moveIn": {
+    "action": "move-in",
+    "station": "STATION_01",
+    "serialNumber": "SN123456",
+    "activateWorkOrder": true,
+    "layer": 0
+  },
+  "moveOutAndTest": {
+    "action": "move-out-and-test",
+    "station": "STATION_01",
+    "serialNumber": "SN123456",
+    "result": "Pass",
+    "groupId": "G1",
+    "groupVersion": "V1",
+    "layer": 0,
+    "checkMultiBoard": false,
+    "measures": [
+      {
+        "position": 1,
+        "measureKey": "Voltage",
+        "lowLimit": 11.5,
+        "highLimit": 12.5,
+        "result": "Pass",
+        "measureValue": 12.1,
+        "unitOfMeasure": "V"
+      }
+    ]
+  }
+}
+

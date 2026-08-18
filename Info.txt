@@ -1,0 +1,90 @@
+Architecture actuelle — état réel du code
+Ce qui est construit et compilé
+1. Bridge C# — production/bridge/Program.cs
+
+Exécutable MesHaiBridge.exe qui :
+
+Reçoit un JSON sur stdin
+Charge MES_HAI.dll par réflexion .NET
+Appelle la méthode MES demandée (Login, Serial_GetInformation, Serial_MoveIn, Serial_MoveOutAndTestResults)
+Retourne un JSON sur stdout avec ok, result, errorDetail (ErrorCode + ErrorDescription)
+Actions supportées :
+
+
+login | get-info | move-in | move-out | move-out-and-test
+2. Orchestrateur Node.js — production/orchestrator/mes-orchestrator.js
+
+Serveur HTTP local (port 7070) avec les endpoints :
+
+Méthode	Route	Description
+GET	/health	Santé + statut login
+POST	/v1/login	Login MES
+POST	/v1/get-info	Info série
+POST	/v1/move-in	Flux complet : login → get-info → move-in
+POST	/v1/move-out-and-test	MoveOut + résultats de test
+POST	/v1/bridge	Appel direct bridge (raw)
+3. Configuration — production/config/client-config.template.json
+
+Chemins de déploiement cible sur le PC client :
+
+
+C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe
+C:\MESApps\ClientGateway\bridge\MES_HAI.dll
+C:\ProgramData\MESApps\CIM\MES_HAI.xml
+4. Test local — production/client-install-test/config/client-config.json
+
+Même orchestrateur mais pointant sur les fichiers locaux du dossier embarque pour valider avant déploiement machine.
+
+Comment lancer le test local maintenant
+
+# Depuis PowerShell dans embarque
+cd "c:\Users\tarek\Dropbox\Orbit\projets\Visteon\embarque\production\orchestrator"
+
+node mes-orchestrator.js --config "..\client-install-test\config\client-config.json"
+Puis tester avec curl (dans un autre terminal) :
+
+
+# Health
+curl http://127.0.0.1:7070/health
+
+# Login
+curl -X POST http://127.0.0.1:7070/v1/login -H "Content-Type: application/json" -d "{\"station\":\"TEST_STATION\"}"
+
+# MoveIn complet
+curl -X POST http://127.0.0.1:7070/v1/move-in -H "Content-Type: application/json" -d "{\"serialNumber\":\"SN001\",\"station\":\"TEST_STATION\"}"
+Point bloquant actuel
+Le bridge ne peut pas se connecter aux serveurs MES (IPs 10.216.140.205/206) depuis ce PC car tu n'es pas sur le réseau usine. L'orchestrateur démarrera mais les appels /v1/login retourneront une erreur réseau — c'est attendu hors VPN/réseau Visteon.
+
+Veux-tu que je :
+
+Ajoute un mode mock/simulation dans le bridge pour tester sans réseau usine ?
+Génère un script d'installation client (install.ps1) pour déployer dans C:\MESApps\ClientGateway ?
+Autre chose ?
+
+
+
+LogLibrary.dll
+MES_HAI.dll
+log4net.dll
+
+Code 0 — Succès, result.name: "Connected", MES_HAI [MOCK] confirmé.
+
+Prochaines étapes à tester en Mock
+Essaie maintenant le flux complet dans l'onglet Mode Test :
+
+1. Get Info — serial connu :
+
+Serial Number : SN001 → doit retourner PartNumber: PN-VISTEON-001
+Serial Number : SN999 → doit retourner ErrorCode: 102 (SerialNotFound)
+2. Move In (flux complet login → get-info → move-in) :
+
+Serial Number : SN001 → Code 0, Result: Pass
+Serial Number : SN999 → Code 102, erreur mise en rouge
+3. Login avec station vide :
+
+Effacer le contenu de client-config.json → stationName: "STATION_NAME_HERE" → doit retourner ErrorCode: 3
+Quand tu passes sur réseau Visteon
+Cliquer Réseau Visteon dans le header
+Redémarrer le serveur (Ctrl+C + relancer)
+S'assurer d'être connecté au VPN ou réseau usine (IP 10.216.140.205:8634 accessible)
+Tester Login avec la vraie station

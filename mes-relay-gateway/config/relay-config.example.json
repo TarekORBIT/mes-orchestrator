@@ -1,0 +1,6 @@
+{
+  "relaySerialNumber": null,
+  "passChannel": 1,
+  "failChannel": 2,
+  "pulseMs": 500
+}

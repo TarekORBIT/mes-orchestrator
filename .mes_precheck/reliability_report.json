@@ -1,0 +1,150 @@
+{
+  "generatedAt": "2026-04-15T13:34:13.062Z",
+  "host": "orbit",
+  "nodeVersion": "v23.6.0",
+  "workingDir": "C:\\Users\\tarek\\Dropbox\\Orbit\\projets\\Visteon\\embarque",
+  "inputs": {
+    "xml": "C:\\Users\\tarek\\Dropbox\\Orbit\\projets\\Visteon\\embarque\\MES_HAI.xml",
+    "dll": "C:\\Users\\tarek\\Dropbox\\Orbit\\projets\\Visteon\\embarque\\MES_HAI.dll",
+    "ini": null,
+    "station": null,
+    "errorFile": null,
+    "checkNetwork": false,
+    "timeoutMs": 1200
+  },
+  "summary": {
+    "criticalCount": 0,
+    "warningCount": 1,
+    "score": 95,
+    "status": "READY_FOR_STAGING_TEST"
+  },
+  "checks": {
+    "xml": {
+      "file": {
+        "exists": true,
+        "path": "C:\\Users\\tarek\\Dropbox\\Orbit\\projets\\Visteon\\embarque\\MES_HAI.xml",
+        "size": 249,
+        "mtime": "2026-04-15T12:32:29.814Z"
+      },
+      "serverCount": 2,
+      "servers": [
+        {
+          "IpAddress": "10.216.140.205",
+          "Port": "8634",
+          "Description": "TUNISIA PROD Primary Server"
+        },
+        {
+          "IpAddress": "10.216.140.206",
+          "Port": "8634",
+          "Description": "TUNISIA PROD Secondary Server"
+        }
+      ],
+      "issues": [],
+      "validation": {
+        "warnings": [],
+        "critical": []
+      }
+    },
+    "dll": {
+      "file": {
+        "exists": true,
+        "path": "C:\\Users\\tarek\\Dropbox\\Orbit\\projets\\Visteon\\embarque\\MES_HAI.dll",
+        "size": 972800,
+        "mtime": "2026-04-15T12:32:29.783Z"
+      },
+      "critical": [],
+      "warnings": [],
+      "tokens": {
+        "MES_HAI.Traceability": true,
+        "ErrorDetail": true,
+        "ErrorCode": true,
+        "ErrorDescription": true,
+        "Serial_GetInformation": true,
+        "Serial_MoveIn": true,
+        "Serial_MoveOutAndTestResults": true,
+        "User_Login": true,
+        "MESApps_CIM_PathHint": true
+      },
+      "hashSha256": "05871a9d0dbbe2346369f1f083e383b649ae476dfc0254e1dca3d02a86126209",
+      "isMzBinary": true
+    },
+    "ini": {
+      "file": {
+        "exists": false
+      },
+      "stationName": null
+    },
+    "network": []
+  },
+  "errorActionResults": [
+    {
+      "sampleId": 1,
+      "input": {
+        "ErrorCode": 0,
+        "ErrorDescription": "OK"
+      },
+      "decision": {
+        "action": "CONTINUE_FLOW",
+        "severity": "none",
+        "reason": "Retour MES nominal"
+      }
+    },
+    {
+      "sampleId": 2,
+      "input": {
+        "ErrorCode": 3,
+        "ErrorDescription": "StationNotLogged"
+      },
+      "decision": {
+        "action": "RELOGIN_AND_RETRY_ONCE",
+        "severity": "medium",
+        "reason": "Session MES non connectee"
+      }
+    },
+    {
+      "sampleId": 3,
+      "input": {
+        "ErrorCode": 101,
+        "ErrorDescription": "Connection timeout"
+      },
+      "decision": {
+        "action": "SWITCH_SERVER_AND_RETRY_ONCE",
+        "severity": "high",
+        "reason": "Probleme reseau/serveur"
+      }
+    },
+    {
+      "sampleId": 4,
+      "input": {
+        "ErrorCode": 210,
+        "ErrorDescription": "NotRegistered station"
+      },
+      "decision": {
+        "action": "BLOCK_AND_CHECK_STATION_CONFIG",
+        "severity": "high",
+        "reason": "Probleme station/configuration"
+      }
+    },
+    {
+      "sampleId": 5,
+      "input": {
+        "ErrorCode": 999,
+        "ErrorDescription": "Unexpected CIM error"
+      },
+      "decision": {
+        "action": "BLOCK_PART_AND_CREATE_INCIDENT",
+        "severity": "high",
+        "reason": "Erreur metier non classifiee"
+      }
+    }
+  ],
+  "critical": [],
+  "warnings": [
+    "StationName absent (fournir --station ou --ini)"
+  ],
+  "recommendations": [
+    "Renseigner StationName dans un .ini pour reproduire le flux machine",
+    "Conserver les 2 serveurs (primary/secondary) pour le fallback"
+  ],
+  "selfTest": null
+}

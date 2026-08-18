@@ -1,0 +1,15 @@
+{
+  "stationName": "STATION_NAME_HERE",
+  "bridgeExePath": "C:\\MESApps\\ClientGateway\\bridge\\MesHaiBridge.exe",
+  "haiDllPath": "C:\\MESApps\\ClientGateway\\bridge\\MES_HAI.dll",
+  "haiInstanceName": "MES_HAI",
+  "host": "127.0.0.1",
+  "port": 7070,
+  "bridgeTimeoutMs": 20000,
+  "defaultLayer": 0,
+  "defaultActivateWorkOrder": true,
+  "defaultCheckMultiBoard": false,
+  "logDir": "C:\\MESApps\\ClientGateway\\logs",
+  "logFileName": "mes-orchestrator.log"
+}
+

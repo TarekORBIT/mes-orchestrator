@@ -1,0 +1,6 @@
+<configuration>
+	<Servers>
+		<Server IpAddress="10.216.140.205" Port="8634" Description="TUNISIA PROD Primary Server"/>
+		<Server IpAddress="10.216.140.206" Port="8634" Description="TUNISIA PROD Secondary Server"/>
+	</Servers>
+</configuration> 

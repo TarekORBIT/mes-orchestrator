@@ -1,0 +1,62 @@
+[
+  {
+    "sampleId": 1,
+    "input": {
+      "ErrorCode": 0,
+      "ErrorDescription": "OK"
+    },
+    "decision": {
+      "action": "CONTINUE_FLOW",
+      "severity": "none",
+      "reason": "Retour MES nominal"
+    }
+  },
+  {
+    "sampleId": 2,
+    "input": {
+      "ErrorCode": 3,
+      "ErrorDescription": "StationNotLogged"
+    },
+    "decision": {
+      "action": "RELOGIN_AND_RETRY_ONCE",
+      "severity": "medium",
+      "reason": "Session MES non connectee"
+    }
+  },
+  {
+    "sampleId": 3,
+    "input": {
+      "ErrorCode": 101,
+      "ErrorDescription": "Connection timeout"
+    },
+    "decision": {
+      "action": "SWITCH_SERVER_AND_RETRY_ONCE",
+      "severity": "high",
+      "reason": "Probleme reseau/serveur"
+    }
+  },
+  {
+    "sampleId": 4,
+    "input": {
+      "ErrorCode": 210,
+      "ErrorDescription": "NotRegistered station"
+    },
+    "decision": {
+      "action": "BLOCK_AND_CHECK_STATION_CONFIG",
+      "severity": "high",
+      "reason": "Probleme station/configuration"
+    }
+  },
+  {
+    "sampleId": 5,
+    "input": {
+      "ErrorCode": 999,
+      "ErrorDescription": "Unexpected CIM error"
+    },
+    "decision": {
+      "action": "BLOCK_PART_AND_CREATE_INCIDENT",
+      "severity": "high",
+      "reason": "Erreur metier non classifiee"
+    }
+  }
+]
