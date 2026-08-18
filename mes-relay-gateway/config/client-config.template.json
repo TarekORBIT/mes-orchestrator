@@ -3,6 +3,8 @@
   "haiXmlPath": "C:\\ProgramData\\MESApps\\CIM\\MES_HAI.xml",
   "haiDllPath": "C:\\MESApps\\ClientGateway\\bridge\\MES_HAI.dll",
   "haiInstanceName": "MES_HAI",
+  "bridgeExePath": "C:\\MESApps\\ClientGateway\\bridge\\MesHaiBridge.exe",
+  "bridgeTimeoutMs": 120000,
   "relayConfigPath": "C:\\MESApps\\ClientGateway\\relay-gateway\\config\\relay-config.json",
   "logDir": "C:\\MESApps\\ClientGateway\\logs",
   "logFileName": "mes-relay-gateway.log"

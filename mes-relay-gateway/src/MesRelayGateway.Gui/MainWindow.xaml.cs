@@ -48,6 +48,7 @@ public partial class MainWindow : Window
             StationTextBox.Text = config.StationName ?? StationTextBox.Text;
             XmlPathTextBox.Text = config.HaiXmlPath;
             DllPathTextBox.Text = config.HaiDllPath;
+            BridgeExePathTextBox.Text = config.BridgeExePath;
             RelayConfigPathTextBox.Text = config.RelayConfigPath ?? RelayConfigPathTextBox.Text;
             HaiInstanceTextBox.Text = config.HaiInstanceName;
             ConfigPathText.Text = dialog.FileName;
@@ -61,6 +62,7 @@ public partial class MainWindow : Window
 
     private void OnBrowseXmlClick(object sender, RoutedEventArgs e) => BrowseFile(XmlPathTextBox, "MES_HAI.xml|*.xml|Tous les fichiers|*.*");
     private void OnBrowseDllClick(object sender, RoutedEventArgs e) => BrowseFile(DllPathTextBox, "MES_HAI.dll|*.dll|Tous les fichiers|*.*");
+    private void OnBrowseBridgeExeClick(object sender, RoutedEventArgs e) => BrowseFile(BridgeExePathTextBox, "MesHaiBridge.exe|*.exe|Tous les fichiers|*.*");
     private void OnBrowseRelayConfigClick(object sender, RoutedEventArgs e) => BrowseFile(RelayConfigPathTextBox, "relay-config.json|*.json|Tous les fichiers|*.*");
 
     private void BrowseFile(System.Windows.Controls.TextBox target, string filter)
@@ -103,6 +105,7 @@ public partial class MainWindow : Window
         var result = ((System.Windows.Controls.ComboBoxItem)ResultComboBox.SelectedItem)?.Content?.ToString() ?? "Pass";
         var xmlPath = XmlPathTextBox.Text.Trim();
         var dllPath = DllPathTextBox.Text.Trim();
+        var bridgeExePath = BridgeExePathTextBox.Text.Trim();
         var relayConfigPath = RelayConfigPathTextBox.Text.Trim();
         var haiInstance = string.IsNullOrWhiteSpace(HaiInstanceTextBox.Text) ? "MES_HAI" : HaiInstanceTextBox.Text.Trim();
 
@@ -124,10 +127,10 @@ public partial class MainWindow : Window
 
         try
         {
-            var flow = await Task.Run(() => RunFlow(isTest, xmlPath, dllPath, haiInstance, relayConfigPath, station, action, serial, result));
-            ShowResult(isTest, flow);
-            AddHistory(isTest, action, station, serial, flow, error: null);
-            StatusText.Text = $"Termine a {DateTime.Now:HH:mm:ss}.";
+            var outcome = await Task.Run(() => RunFlow(isTest, dllPath, bridgeExePath, haiInstance, relayConfigPath, station, action, serial, result));
+            ShowResult(isTest, outcome);
+            AddHistory(isTest, action, station, serial, outcome.Flow, error: null);
+            StatusText.Text = $"Termine a {DateTime.Now:HH:mm:ss} (mesClient={outcome.MesClientMode}).";
         }
         catch (Exception ex)
         {
@@ -142,8 +145,10 @@ public partial class MainWindow : Window
         }
     }
 
+    private sealed record FlowOutcome(FlowResult Flow, string MesClientMode);
+
     /// <summary>Runs off the UI thread: builds the MES client / relay driver for the chosen mode and calls GatewayRunner.</summary>
-    private static FlowResult RunFlow(bool isTest, string xmlPath, string dllPath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result)
+    private static FlowOutcome RunFlow(bool isTest, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result)
     {
         RelayConfig? relayConfig = null;
         if (!string.IsNullOrWhiteSpace(relayConfigPath) && File.Exists(relayConfigPath))
@@ -151,22 +156,29 @@ public partial class MainWindow : Window
             relayConfig = RelayConfig.Load(relayConfigPath);
         }
 
-        using IMesClient mes = isTest ? new MockMesClient() : LoadRealClient(xmlPath, dllPath, haiInstance);
+        var mesClientMode = "mock";
+        using IMesClient mes = isTest
+            ? new MockMesClient()
+            : CreateRealClient(dllPath, bridgeExePath, haiInstance, out mesClientMode);
         IRelayDriver? relayDriver = relayConfig is null ? null : (isTest ? new MockRelayDriver() : new UsbRelayDriver());
 
-        return GatewayRunner.Run(mes, relayDriver, relayConfig, station, action, serial, result, user: null, password: null);
+        var flow = GatewayRunner.Run(mes, relayDriver, relayConfig, station, action, serial, result, user: null, password: null);
+        return new FlowOutcome(flow, mesClientMode);
     }
 
-    private static IMesClient LoadRealClient(string xmlPath, string dllPath, string haiInstance)
+    private static IMesClient CreateRealClient(string dllPath, string bridgeExePath, string haiInstance, out string mesClientMode)
     {
-        if (!File.Exists(xmlPath)) throw new FileNotFoundException($"MES_HAI.xml introuvable: {xmlPath}", xmlPath);
-        if (!File.Exists(dllPath)) throw new FileNotFoundException($"MES_HAI.dll introuvable: {dllPath}", dllPath);
-        return MesClient.Load(dllPath, haiInstance);
+        // Same bridgeTimeoutMs default as GatewayConfig - long enough for the off-network
+        // case where MES_HAI.dll's own load-balancing retries both CIM servers before giving up.
+        var created = MesClientFactory.CreateReal(dllPath, haiInstance, bridgeExePath, bridgeTimeoutMs: 120000, noBridge: false);
+        mesClientMode = created.Mode;
+        return created.Client;
     }
 
     // ── Affichage du resultat ────────────────────────────────────────────
-    private void ShowResult(bool isTest, FlowResult flow)
+    private void ShowResult(bool isTest, FlowOutcome outcome)
     {
+        var flow = outcome.Flow;
         ResultBanner.Visibility = Visibility.Visible;
 
         if (flow.Ok)
@@ -184,7 +196,7 @@ public partial class MainWindow : Window
             ResultTitleText.Foreground = new SolidColorBrush(Color.FromRgb(0xB7, 0x1C, 0x1C));
         }
 
-        var mode = isTest ? "TEST (simule)" : "REEL";
+        var mode = isTest ? "TEST (simule)" : $"REEL ({outcome.MesClientMode})";
         ResultDetailText.Text =
             $"Mode: {mode}  |  Action: {flow.Action}  |  Station: {flow.Station}  |  Serie: {flow.SerialNumber ?? "-"}\n" +
             $"MES: ErrorCode={flow.FinalResult.ErrorCode?.ToString() ?? "-"}  ErrorDescription={flow.FinalResult.ErrorDescription ?? "-"}";
@@ -196,6 +208,19 @@ public partial class MainWindow : Window
             null when flow.RelayNote is not null => flow.RelayNote,
             _ => "Relais: non configure.",
         };
+
+        var engineLog = string.Join(Environment.NewLine, flow.Steps.Select(s => s.EngineLog).Where(l => !string.IsNullOrEmpty(l)));
+        if (!string.IsNullOrEmpty(engineLog))
+        {
+            EngineLogExpander.Visibility = Visibility.Visible;
+            EngineLogExpander.IsExpanded = !flow.Ok;
+            EngineLogText.Text = engineLog;
+        }
+        else
+        {
+            EngineLogExpander.Visibility = Visibility.Collapsed;
+            EngineLogText.Text = string.Empty;
+        }
 
         ResultJsonText.Text = JsonSerializer.Serialize(flow, JsonOptions);
     }
@@ -209,6 +234,8 @@ public partial class MainWindow : Window
         ResultTitleText.Foreground = new SolidColorBrush(Color.FromRgb(0xB7, 0x1C, 0x1C));
         ResultDetailText.Text = message;
         ResultRelayText.Text = string.Empty;
+        EngineLogExpander.Visibility = Visibility.Collapsed;
+        EngineLogText.Text = string.Empty;
         ResultJsonText.Text = string.Empty;
     }
 

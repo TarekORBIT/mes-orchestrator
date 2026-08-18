@@ -10,7 +10,8 @@ param(
   [int]$RelayFailChannel = 2,
   [int]$RelayPulseMs = 500,
   [switch]$BuildIfNeeded,
-  [switch]$WithGui
+  [switch]$WithGui,
+  [switch]$WithBridge
 )
 
 Set-StrictMode -Version Latest
@@ -87,6 +88,34 @@ function Resolve-RelayGatewayGuiBinaryPath {
   return $exePath
 }
 
+function Resolve-MesHaiBridgeBinaryPath {
+  param(
+    [string]$EmbarqueRootPath,
+    [switch]$TryBuild
+  )
+
+  $csproj = Join-Path $EmbarqueRootPath "production\bridge\MesHaiBridge.csproj"
+  $publishDir = Join-Path $EmbarqueRootPath "production\bridge\publish"
+  $exePath = Join-Path $publishDir "MesHaiBridge.exe"
+
+  if (Test-Path -LiteralPath $exePath -PathType Leaf) {
+    return $exePath
+  }
+
+  if (-not $TryBuild) {
+    throw "MesHaiBridge.exe introuvable dans $publishDir. Activez -BuildIfNeeded ou publiez production\bridge avant."
+  }
+
+  Assert-File $csproj "Projet MesHaiBridge (production/bridge)"
+  Write-Step "Compilation MesHaiBridge (dotnet publish)"
+  & dotnet publish $csproj -c Release -o $publishDir | Out-Host
+
+  if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
+    throw "Compilation terminee mais MesHaiBridge.exe absent: $exePath"
+  }
+  return $exePath
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path
 $embarqueRoot = (Resolve-Path (Join-Path $projectRoot "..")).Path
@@ -125,6 +154,13 @@ if ($WithGui) {
   Copy-Item -Path (Join-Path $guiPublishDir "*") -Destination $relayGatewayDir -Force
 }
 
+if ($WithBridge) {
+  $bridgeExeSource = Resolve-MesHaiBridgeBinaryPath -EmbarqueRootPath $embarqueRoot -TryBuild:$BuildIfNeeded
+  $bridgePublishDir = Split-Path -Parent $bridgeExeSource
+  Write-Step "Copie de MesHaiBridge.exe + dependances"
+  Copy-Item -Path (Join-Path $bridgePublishDir "*") -Destination $bridgeDir -Force
+}
+
 Write-Step "Copie de MES_HAI.dll (partagee avec le bridge C#)"
 Copy-Item -LiteralPath $mesDllSource -Destination (Join-Path $bridgeDir "MES_HAI.dll") -Force
 
@@ -138,6 +174,8 @@ $clientConfig = @{
   haiXmlPath      = Join-Path $ProgramDataCimPath "MES_HAI.xml"
   haiDllPath      = Join-Path $bridgeDir "MES_HAI.dll"
   haiInstanceName = "MES_HAI"
+  bridgeExePath   = Join-Path $bridgeDir "MesHaiBridge.exe"
+  bridgeTimeoutMs = 120000
   relayConfigPath = Join-Path $relayConfigDir "relay-config.json"
   logDir          = $logDir
   logFileName     = "mes-relay-gateway.log"
@@ -170,6 +208,12 @@ Write-Host "Installation terminee." -ForegroundColor Green
 Write-Host "InstallRoot          : $InstallRoot"
 Write-Host "MES XML              : $(Join-Path $ProgramDataCimPath 'MES_HAI.xml')"
 Write-Host "MES DLL              : $(Join-Path $bridgeDir 'MES_HAI.dll')"
+$bridgeExeDeployed = Join-Path $bridgeDir "MesHaiBridge.exe"
+if (Test-Path -LiteralPath $bridgeExeDeployed -PathType Leaf) {
+  Write-Host "MesHaiBridge.exe     : $bridgeExeDeployed (Mode Reel l'utilisera automatiquement)"
+} else {
+  Write-Host "MesHaiBridge.exe     : absent - relancez avec -WithBridge, sinon Mode Reel appelle MES_HAI.dll directement en process."
+}
 Write-Host "MesRelayGateway.exe  : $(Join-Path $relayGatewayDir 'MesRelayGateway.exe')"
 if ($WithGui) {
   Write-Host "MesRelayGatewayGui.exe : $(Join-Path $relayGatewayDir 'MesRelayGatewayGui.exe')"

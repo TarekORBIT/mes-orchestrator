@@ -12,6 +12,12 @@ public sealed class MesClient : IMesClient
     private readonly Assembly _assembly;
     private readonly object _traceability;
 
+    /// <summary>
+    /// log4net resolves MES_HAI.dll's "Log\MES_HAI.log" relative to this process's own
+    /// working directory (confirmed empirically), not the DLL's folder.
+    /// </summary>
+    private static string LogPath => Path.Combine(AppContext.BaseDirectory, "Log", "MES_HAI.log");
+
     private MesClient(Assembly assembly, object traceability)
     {
         _assembly = assembly;
@@ -47,47 +53,46 @@ public sealed class MesClient : IMesClient
     public MesResult Login(string station, string? user, string? password)
     {
         var hasCredentials = !string.IsNullOrWhiteSpace(user) || !string.IsNullOrWhiteSpace(password);
-        var raw = hasCredentials
+        return CaptureLog("login", () => hasCredentials
             ? Invoke("Login", station, user ?? string.Empty, password ?? string.Empty)
-            : Invoke("Login", station);
-        return BuildResult("login", raw);
+            : Invoke("Login", station));
     }
 
-    public MesResult GetInfo(string station, string serialNumber)
-    {
-        var raw = Invoke("Serial_GetInformation", station, serialNumber);
-        return BuildResult("get-info", raw);
-    }
+    public MesResult GetInfo(string station, string serialNumber) =>
+        CaptureLog("get-info", () => Invoke("Serial_GetInformation", station, serialNumber));
 
-    public MesResult MoveIn(string station, string serialNumber, bool activateWorkOrder, int layer)
-    {
-        var raw = Invoke("Serial_MoveIn", station, serialNumber, activateWorkOrder, layer);
-        return BuildResult("move-in", raw);
-    }
+    public MesResult MoveIn(string station, string serialNumber, bool activateWorkOrder, int layer) =>
+        CaptureLog("move-in", () => Invoke("Serial_MoveIn", station, serialNumber, activateWorkOrder, layer));
 
-    public MesResult MoveOutAndTest(string station, string serialNumber, string result, string groupId, string groupVersion, int layer, bool checkMultiBoard)
-    {
-        var resultsType = FindType("Results");
-        var resultValue = ParseEnumLoose(resultsType, result);
-        var measureType = FindType("MES_HAI.Entity.Measure");
-        var emptyMeasures = Array.CreateInstance(measureType, 0);
-
-        object? raw;
-        try
+    public MesResult MoveOutAndTest(string station, string serialNumber, string result, string groupId, string groupVersion, int layer, bool checkMultiBoard) =>
+        CaptureLog("move-out-and-test", () =>
         {
-            raw = Invoke("Serial_MoveOutAndTestResults", station, serialNumber, resultValue, groupId, groupVersion, emptyMeasures, layer, checkMultiBoard);
-        }
-        catch (MissingMethodException)
-        {
-            var listType = typeof(List<>).MakeGenericType(measureType);
-            var emptyList = Activator.CreateInstance(listType)!;
-            raw = Invoke("Serial_MoveOutAndTestResults", station, serialNumber, resultValue, groupId, groupVersion, emptyList, layer, checkMultiBoard);
-        }
+            var resultsType = FindType("Results");
+            var resultValue = ParseEnumLoose(resultsType, result);
+            var measureType = FindType("MES_HAI.Entity.Measure");
+            var emptyMeasures = Array.CreateInstance(measureType, 0);
 
-        return BuildResult("move-out-and-test", raw);
+            try
+            {
+                return Invoke("Serial_MoveOutAndTestResults", station, serialNumber, resultValue, groupId, groupVersion, emptyMeasures, layer, checkMultiBoard);
+            }
+            catch (MissingMethodException)
+            {
+                var listType = typeof(List<>).MakeGenericType(measureType);
+                var emptyList = Activator.CreateInstance(listType)!;
+                return Invoke("Serial_MoveOutAndTestResults", station, serialNumber, resultValue, groupId, groupVersion, emptyList, layer, checkMultiBoard);
+            }
+        });
+
+    private MesResult CaptureLog(string action, Func<object?> call)
+    {
+        var offset = MesLogReader.GetLength(LogPath);
+        var raw = call();
+        var engineLog = MesLogReader.ReadFrom(LogPath, offset);
+        return BuildResult(action, raw, engineLog);
     }
 
-    private MesResult BuildResult(string action, object? raw)
+    private MesResult BuildResult(string action, object? raw, string? engineLog)
     {
         var flattened = ObjectGraphFlattener.Flatten(raw);
         var (errorCode, errorDescription) = ExtractErrorInfo(raw);
@@ -102,6 +107,7 @@ public sealed class MesClient : IMesClient
             ErrorCode = errorCode,
             ErrorDescription = errorDescription,
             Result = flattened,
+            EngineLog = engineLog,
         };
     }
 

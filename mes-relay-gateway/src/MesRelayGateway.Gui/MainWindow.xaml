@@ -69,6 +69,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <Label Grid.Row="0" Grid.Column="0" Content="Station"/>
@@ -84,14 +85,21 @@
                              Text="C:\MESApps\ClientGateway\bridge\MES_HAI.dll"/>
                     <Button Grid.Row="2" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseDllClick"/>
 
-                    <Label Grid.Row="3" Grid.Column="0" Content="relay-config.json"/>
-                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="RelayConfigPathTextBox" Margin="0,3"
-                             Text="C:\MESApps\ClientGateway\relay-gateway\config\relay-config.json"/>
-                    <Button Grid.Row="3" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseRelayConfigClick"/>
+                    <Label Grid.Row="3" Grid.Column="0" Content="MesHaiBridge.exe"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="BridgeExePathTextBox" Margin="0,3"
+                             Text="C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe"/>
+                    <Button Grid.Row="3" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseBridgeExeClick"/>
 
-                    <Label Grid.Row="4" Grid.Column="0" Content="Instance HAI"/>
-                    <TextBox Grid.Row="4" Grid.Column="1" x:Name="HaiInstanceTextBox" Margin="0,3" Text="MES_HAI"/>
+                    <Label Grid.Row="4" Grid.Column="0" Content="relay-config.json"/>
+                    <TextBox Grid.Row="4" Grid.Column="1" x:Name="RelayConfigPathTextBox" Margin="0,3"
+                             Text="C:\MESApps\ClientGateway\relay-gateway\config\relay-config.json"/>
+                    <Button Grid.Row="4" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseRelayConfigClick"/>
+
+                    <Label Grid.Row="5" Grid.Column="0" Content="Instance HAI"/>
+                    <TextBox Grid.Row="5" Grid.Column="1" x:Name="HaiInstanceTextBox" Margin="0,3" Text="MES_HAI"/>
                 </Grid>
+                <TextBlock Margin="0,4,0,0" Foreground="#666666" FontStyle="Italic" TextWrapping="Wrap"
+                           Text="En Mode Reel, si MesHaiBridge.exe existe au chemin ci-dessus, MES_HAI.dll est appelee via ce bridge (comme l'orchestrateur Node) ; sinon appel direct en process."/>
             </StackPanel>
         </GroupBox>
 
@@ -138,6 +146,10 @@
                 <TextBlock x:Name="ResultTitleText" FontSize="18" FontWeight="Bold"/>
                 <TextBlock x:Name="ResultDetailText" TextWrapping="Wrap" Margin="0,4,0,0"/>
                 <TextBlock x:Name="ResultRelayText" TextWrapping="Wrap" Margin="0,4,0,0" FontStyle="Italic"/>
+                <Expander x:Name="EngineLogExpander" Header="Journal MES_HAI.dll (Log\MES_HAI.log)" Margin="0,8,0,0" Visibility="Collapsed">
+                    <TextBox x:Name="EngineLogText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="260" Margin="0,6,0,0"/>
+                </Expander>
                 <Expander Header="Details techniques (JSON)" Margin="0,8,0,0">
                     <TextBox x:Name="ResultJsonText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="220" Margin="0,6,0,0"/>

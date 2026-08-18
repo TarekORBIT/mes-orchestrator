@@ -26,6 +26,25 @@ public sealed class GatewayConfig
     [JsonPropertyName("haiInstanceName")]
     public string HaiInstanceName { get; set; } = "MES_HAI";
 
+    /// <summary>
+    /// Same key/default as production/orchestrator's client-config.json. When this file
+    /// exists, Mode Reel calls MES_HAI.dll through MesHaiBridge.exe (production/bridge) in a
+    /// child process, exactly like the Node orchestrator does; otherwise it falls back to
+    /// loading MES_HAI.dll directly in-process.
+    /// </summary>
+    [JsonPropertyName("bridgeExePath")]
+    public string BridgeExePath { get; set; } = @"C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe";
+
+    /// <summary>
+    /// production/orchestrator defaults this to 20000ms, which is tuned for a reachable
+    /// factory network. Off-network, MES_HAI.dll's own load-balancing check times out on
+    /// each unreachable CIM server (~21s each, tried more than once), so a short timeout
+    /// here would kill the bridge before it can return its real ("NotLogged") status. 120s
+    /// gives that enough room while still being a real cap.
+    /// </summary>
+    [JsonPropertyName("bridgeTimeoutMs")]
+    public int BridgeTimeoutMs { get; set; } = 120000;
+
     [JsonPropertyName("relayConfigPath")]
     public string? RelayConfigPath { get; set; } = @"C:\MESApps\ClientGateway\relay-gateway\config\relay-config.json";
 

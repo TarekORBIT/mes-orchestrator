@@ -259,8 +259,7 @@ public static class Program
             }
         };
 
-        var errorCode = TryGetNestedInt(resultObj, "ErrorCode");
-        var errorDescription = TryGetNestedString(resultObj, "ErrorDescription");
+        var (errorCode, errorDescription) = ExtractErrorInfo(resultObj);
         if (errorCode.HasValue || !string.IsNullOrWhiteSpace(errorDescription))
         {
             response.ErrorDetail = new ErrorDetailPayload
@@ -271,6 +270,31 @@ public static class Program
         }
 
         return response;
+    }
+
+    /// <summary>
+    /// Some Traceability methods (observed: Login) return the status directly as an enum
+    /// (e.g. Results.NotLogged = 3) rather than an object with ErrorCode/ErrorDescription
+    /// properties. Others wrap it in a nested "ErrorDetail" object. Handle all three shapes,
+    /// otherwise callers (like the orchestrator's classifyErrorDetail) never see the real code.
+    /// </summary>
+    private static (int? Code, string? Description) ExtractErrorInfo(object? raw)
+    {
+        if (raw is null) return (null, null);
+
+        if (raw.GetType().IsEnum)
+        {
+            return (Convert.ToInt32(raw), raw.ToString());
+        }
+
+        var code = TryGetNestedInt(raw, "ErrorCode");
+        var description = TryGetNestedString(raw, "ErrorDescription");
+        if (code.HasValue || description is not null) return (code, description);
+
+        var errorDetailObj = raw.GetType().GetProperty("ErrorDetail", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.GetValue(raw);
+        return errorDetailObj is null
+            ? (null, null)
+            : (TryGetNestedInt(errorDetailObj, "ErrorCode"), TryGetNestedString(errorDetailObj, "ErrorDescription"));
     }
 
     private static string? TryGetNestedString(object? obj, string propertyName)

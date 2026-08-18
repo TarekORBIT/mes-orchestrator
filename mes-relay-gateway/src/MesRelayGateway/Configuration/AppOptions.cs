@@ -15,6 +15,8 @@ public sealed class AppOptions
     public string? StationOverride { get; init; }
     public string? RelayConfigPathOverride { get; init; }
     public string? HaiInstanceOverride { get; init; }
+    public string? BridgeExePathOverride { get; init; }
+    public bool NoBridge { get; init; }
     public bool IsTestMode { get; init; }
 
     public required MesAction Action { get; init; }
@@ -25,8 +27,9 @@ public sealed class AppOptions
 
     public static AppOptions Parse(string[] args)
     {
-        string? config = null, xml = null, dll = null, ini = null, station = null, relayConfig = null, instance = null, mode = null;
+        string? config = null, xml = null, dll = null, ini = null, station = null, relayConfig = null, instance = null, mode = null, bridgeExe = null;
         string? action = null, serial = null, result = null, user = null, password = null;
+        var noBridge = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -47,6 +50,8 @@ public sealed class AppOptions
                 case "--password": password = Next(); break;
                 case "--hai-instance": instance = Next(); break;
                 case "--mode": mode = Next(); break;
+                case "--bridge-exe": bridgeExe = Next(); break;
+                case "--no-bridge": noBridge = true; break;
                 case "--help":
                 case "-h":
                     throw new HelpRequestedException();
@@ -88,6 +93,8 @@ public sealed class AppOptions
             StationOverride = station,
             RelayConfigPathOverride = relayConfig is null ? null : Path.GetFullPath(relayConfig),
             HaiInstanceOverride = instance,
+            BridgeExePathOverride = bridgeExe is null ? null : Path.GetFullPath(bridgeExe),
+            NoBridge = noBridge,
             IsTestMode = isTestMode,
             Action = parsedAction,
             SerialNumber = serial,
@@ -122,9 +129,15 @@ public sealed class AppOptions
           --relay-config <path>   Surcharge relayConfigPath. Si le fichier resolu n'existe pas,
                                    l'etape relais est simplement ignoree (pas d'erreur).
           --hai-instance <name>   Surcharge haiInstanceName (defaut MES_HAI)
+          --bridge-exe <path>     Surcharge bridgeExePath (MesHaiBridge.exe). En mode reel, si
+                                   ce fichier existe, MES_HAI.dll est appelee via ce bridge
+                                   (meme mecanisme que l'orchestrateur Node), sinon appel direct
+                                   en process. Defaut: C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe
+          --no-bridge              Force l'appel direct en process meme si bridgeExePath existe.
           --mode <test|real>      test = simulation locale (pas de DLL/reseau requis), meme
                                    comportement que le mode mock de l'orchestrateur Node.
-                                   real = appel reel MES_HAI.dll (defaut).
+                                   real = appel reel MES_HAI.dll, via MesHaiBridge.exe si
+                                   disponible (defaut).
           --action <name>         login | get-info | move-in | move-out-and-test
           --serial <n>            Numero de serie (requis sauf pour login)
           --result <Pass|Fail>    Resultat pour move-out-and-test (defaut Pass)

@@ -63,6 +63,7 @@ public static class Program
         var dllPath = options.DllPathOverride ?? gatewayConfig.HaiDllPath;
         var haiInstance = options.HaiInstanceOverride ?? gatewayConfig.HaiInstanceName;
         var relayConfigPath = options.RelayConfigPathOverride ?? gatewayConfig.RelayConfigPath;
+        var bridgeExePath = options.BridgeExePathOverride ?? gatewayConfig.BridgeExePath;
 
         var station = ResolveStationName(options, gatewayConfig);
 
@@ -86,9 +87,10 @@ public static class Program
         }
 
         // ── 2) Choix Mode Test (simulation) vs Mode Reel (DLL + relais physiques) ────────
+        var mesClientMode = "mock";
         using IMesClient mes = options.IsTestMode
             ? new MockMesClient()
-            : LoadRealMesClient(xmlPath, dllPath, haiInstance, out servers);
+            : LoadRealMesClient(xmlPath, dllPath, haiInstance, bridgeExePath, gatewayConfig.BridgeTimeoutMs, options.NoBridge, out servers, out mesClientMode);
 
         IRelayDriver? relayDriver = relayConfig is null ? null : (options.IsTestMode ? new MockRelayDriver() : new UsbRelayDriver());
 
@@ -99,12 +101,13 @@ public static class Program
         {
             ["ok"] = flow.Ok,
             ["mode"] = options.IsTestMode ? "test" : "real",
+            ["mesClientMode"] = mesClientMode,
             ["action"] = flow.Action.ToString(),
             ["station"] = flow.Station,
             ["serialNumber"] = flow.SerialNumber,
-            ["config"] = new { xmlPath, dllPath, haiInstance, relayConfigPath },
+            ["config"] = new { xmlPath, dllPath, haiInstance, bridgeExePath, relayConfigPath },
             ["mesServers"] = servers.Select(s => new { s.IpAddress, s.Port, s.Description }),
-            ["steps"] = flow.Steps.Select(s => new { s.Action, s.Ok, s.ErrorCode, s.ErrorDescription, s.Result }),
+            ["steps"] = flow.Steps.Select(s => new { s.Action, s.Ok, s.ErrorCode, s.ErrorDescription, s.Result, s.EngineLog }),
             ["decision"] = flow.Decision,
             ["relay"] = flow.Relay,
             ["relayNote"] = relaySkippedReason ?? flow.RelayNote,
@@ -113,19 +116,15 @@ public static class Program
         return flow.Ok ? 0 : 1;
     }
 
-    private static IMesClient LoadRealMesClient(string xmlPath, string dllPath, string haiInstance, out IReadOnlyList<MesServer> servers)
+    private static IMesClient LoadRealMesClient(
+        string xmlPath, string dllPath, string haiInstance, string? bridgeExePath, int bridgeTimeoutMs, bool noBridge,
+        out IReadOnlyList<MesServer> servers, out string mesClientMode)
     {
-        if (!File.Exists(xmlPath))
-        {
-            throw new FileNotFoundException($"MES_HAI.xml introuvable: {xmlPath}", xmlPath);
-        }
-        if (!File.Exists(dllPath))
-        {
-            throw new FileNotFoundException($"MES_HAI.dll introuvable: {dllPath}", dllPath);
-        }
+        servers = File.Exists(xmlPath) ? MesServerConfig.Load(xmlPath) : Array.Empty<MesServer>();
 
-        servers = MesServerConfig.Load(xmlPath);
-        return MesClient.Load(dllPath, haiInstance);
+        var created = MesClientFactory.CreateReal(dllPath, haiInstance, bridgeExePath, bridgeTimeoutMs, noBridge);
+        mesClientMode = created.Mode;
+        return created.Client;
     }
 
     private static string ResolveStationName(AppOptions options, GatewayConfig gatewayConfig)
