@@ -86,13 +86,25 @@ public static class Program
             }
         }
 
-        // ── 2) Choix Mode Test (simulation) vs Mode Reel (DLL + relais physiques) ────────
+        // ── 2) Choix du mode: Test (simulation) / Test DLL (reel, sans relais) / Reel ────
         var mesClientMode = "mock";
-        using IMesClient mes = options.IsTestMode
+        using IMesClient mes = options.Mode == GatewayMode.Mock
             ? new MockMesClient()
             : LoadRealMesClient(xmlPath, dllPath, haiInstance, bridgeExePath, gatewayConfig.BridgeTimeoutMs, options.NoBridge, out servers, out mesClientMode);
 
-        IRelayDriver? relayDriver = relayConfig is null ? null : (options.IsTestMode ? new MockRelayDriver() : new UsbRelayDriver());
+        // DllTest never touches the relay, even if a relay-config resolves — the point of
+        // this mode is to exercise MES_HAI.dll/its log safely, not the physical output.
+        IRelayDriver? relayDriver = options.Mode switch
+        {
+            GatewayMode.Mock => relayConfig is null ? null : new MockRelayDriver(),
+            GatewayMode.DllTest => null,
+            GatewayMode.Real => relayConfig is null ? null : new UsbRelayDriver(),
+            _ => null,
+        };
+        if (options.Mode == GatewayMode.DllTest && relayConfig is not null)
+        {
+            relaySkippedReason = "Mode Test DLL: relais volontairement desactive (utiliser --mode real pour le declencher).";
+        }
 
         // ── 3) Appel MES + classification d'erreur + sortie relais ──────────────────────
         var flow = GatewayRunner.Run(mes, relayDriver, relayConfig, station, options.Action, options.SerialNumber, options.Result, options.User, options.Password);
@@ -100,7 +112,7 @@ public static class Program
         PrintJson(new Dictionary<string, object?>
         {
             ["ok"] = flow.Ok,
-            ["mode"] = options.IsTestMode ? "test" : "real",
+            ["mode"] = options.Mode switch { GatewayMode.Mock => "test", GatewayMode.DllTest => "dll-test", _ => "real" },
             ["mesClientMode"] = mesClientMode,
             ["action"] = flow.Action.ToString(),
             ["station"] = flow.Station,
@@ -138,7 +150,7 @@ public static class Program
             if (!string.IsNullOrWhiteSpace(ini.StationName)) return ini.StationName;
         }
 
-        if (options.IsTestMode) return "TEST_STATION";
+        if (options.Mode is GatewayMode.Mock or GatewayMode.DllTest) return "TEST_STATION";
 
         throw new ArgumentException("Aucun nom de station: fournir --station, un --config avec stationName, ou --ini avec StationName.");
     }

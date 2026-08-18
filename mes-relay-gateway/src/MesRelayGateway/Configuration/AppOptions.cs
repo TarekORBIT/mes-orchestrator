@@ -17,7 +17,7 @@ public sealed class AppOptions
     public string? HaiInstanceOverride { get; init; }
     public string? BridgeExePathOverride { get; init; }
     public bool NoBridge { get; init; }
-    public bool IsTestMode { get; init; }
+    public required GatewayMode Mode { get; init; }
 
     public required MesAction Action { get; init; }
     public string? SerialNumber { get; init; }
@@ -60,12 +60,13 @@ public sealed class AppOptions
             }
         }
 
-        var isTestMode = mode?.Trim().ToLowerInvariant() switch
+        var gatewayMode = mode?.Trim().ToLowerInvariant() switch
         {
-            null => false,
-            "real" or "reel" => false,
-            "test" or "mock" => true,
-            _ => throw new ArgumentException($"--mode invalide: '{mode}'. Valeurs: test, real."),
+            null => GatewayMode.Real,
+            "real" or "reel" => GatewayMode.Real,
+            "test" or "mock" => GatewayMode.Mock,
+            "dll-test" or "dlltest" or "dll" => GatewayMode.DllTest,
+            _ => throw new ArgumentException($"--mode invalide: '{mode}'. Valeurs: test, dll-test, real."),
         };
 
         if (string.IsNullOrWhiteSpace(action)) throw new ArgumentException("--action <login|get-info|move-in|move-out-and-test> est requis.");
@@ -95,7 +96,7 @@ public sealed class AppOptions
             HaiInstanceOverride = instance,
             BridgeExePathOverride = bridgeExe is null ? null : Path.GetFullPath(bridgeExe),
             NoBridge = noBridge,
-            IsTestMode = isTestMode,
+            Mode = gatewayMode,
             Action = parsedAction,
             SerialNumber = serial,
             Result = string.IsNullOrWhiteSpace(result) ? "Pass" : result,
@@ -134,10 +135,19 @@ public sealed class AppOptions
                                    (meme mecanisme que l'orchestrateur Node), sinon appel direct
                                    en process. Defaut: C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe
           --no-bridge              Force l'appel direct en process meme si bridgeExePath existe.
-          --mode <test|real>      test = simulation locale (pas de DLL/reseau requis), meme
-                                   comportement que le mode mock de l'orchestrateur Node.
-                                   real = appel reel MES_HAI.dll, via MesHaiBridge.exe si
-                                   disponible (defaut).
+          --mode <test|dll-test|real>
+                                   test     = simulation complete (MES + relais), pas de DLL/
+                                              reseau requis. Meme comportement que le mode mock
+                                              de l'orchestrateur Node.
+                                   dll-test = appelle reellement MES_HAI.dll (via MesHaiBridge.exe
+                                              si disponible) et capture son log, MAIS ne touche
+                                              jamais le relais. Fonctionne sans reseau Visteon:
+                                              hors reseau, MES_HAI.dll renvoie un vrai statut
+                                              metier (ex. ErrorCode 3 "NotLogged") au lieu de
+                                              planter - ideal pour valider le pipeline DLL/bridge/
+                                              log sans etre sur le VPN usine.
+                                   real     = appel reel MES_HAI.dll + relais physique si
+                                              relayConfigPath resout (defaut).
           --action <name>         login | get-info | move-in | move-out-and-test
           --serial <n>            Numero de serie (requis sauf pour login)
           --result <Pass|Fail>    Resultat pour move-out-and-test (defaut Pass)
@@ -146,6 +156,10 @@ public sealed class AppOptions
         Exemple (poste client, apres install):
           MesRelayGateway.exe --config C:\MESApps\ClientGateway\relay-gateway\config\client-config.json ^
             --action move-out-and-test --serial SN001 --result Pass
+
+        Exemple (tester la vraie DLL sans reseau Visteon, sans toucher au relais):
+          MesRelayGateway.exe --mode dll-test --dll "dll Env\dll Env\MES_HAI.dll" ^
+            --bridge-exe production\bridge\publish\MesHaiBridge.exe --station TEST_STATION --action login
         """;
 }
 

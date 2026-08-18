@@ -26,11 +26,18 @@ Outils .NET (C#) autonomes, compilés en `.exe` Windows, qui:
    [usb-relay-hid](https://github.com/pavel-a/usb-relay-hid)) selon le verdict: un canal pour
    "pass", un canal pour "fail/reject".
 
-Deux **modes**, disponibles aussi bien dans la GUI qu'en ligne de commande:
-- **Mode Test** : simulation complète (MES et relais tous les deux simulés), aucun fichier ni
-  matériel requis — pour apprendre l'outil ou vérifier la logique de classification d'erreur.
-- **Mode Réel** : appel effectif à `MES_HAI.dll` et au relais USB physique — nécessite le réseau
-  usine/VPN Visteon et le matériel branché.
+Trois **modes**, disponibles aussi bien dans la GUI qu'en ligne de commande (`--mode`):
+- **Mode Test** (`test`) : simulation complète (MES et relais tous les deux simulés), aucun
+  fichier ni matériel requis — pour apprendre l'outil ou vérifier la logique de classification
+  d'erreur.
+- **Mode Test DLL** (`dll-test`) : appelle réellement `MES_HAI.dll` (via `MesHaiBridge.exe` si
+  disponible, sinon en direct) et capture son vrai journal — mais **ne déclenche jamais le
+  relais**, même si un `relay-config.json` est configuré. Ne nécessite pas le réseau/VPN Visteon:
+  hors réseau, la DLL répond avec un vrai statut métier (`ErrorCode 3 "NotLogged"`) au lieu de
+  planter. C'est le mode à utiliser pour tester la DLL et son log sans être sur le réseau usine
+  ni risquer de piloter le relais pour de faux — voir §3.
+- **Mode Réel** (`real`) : appel effectif à `MES_HAI.dll` (bridge ou direct) **et** au relais USB
+  physique si configuré — le mode de production, sur le réseau usine/VPN Visteon.
 
 ## Structure
 
@@ -61,15 +68,18 @@ La fenêtre s'ouvre directement en **Mode Test** (aucun fichier requis, tout est
    "SerialNotFound"), et cliquer **Exécuter**.
 2. Le résultat s'affiche en clair (bandeau vert = OK, rouge = erreur, avec l'explication), plus le
    détail technique (JSON) repliable, et un historique des essais en bas de fenêtre.
-3. Pour passer en conditions réelles: cocher **Mode Réel**, renseigner (ou charger via
-   *"Charger client-config.json..."*) les chemins vers `MES_HAI.xml`, `MES_HAI.dll`,
-   `MesHaiBridge.exe`, le nom de station, et le fichier `relay-config.json` — puis exécuter. Ça
-   fonctionne aussi **sans être sur le réseau Visteon**: la DLL répond alors avec un vrai statut
-   métier (ex. `NotLogged`, ErrorCode 3) au lieu de planter, ce qui permet de valider tout le
-   pipeline (chargement DLL, bridge, logging) sans VPN — voir §3.
+3. Pour exercer la vraie DLL **sans réseau Visteon et sans risque sur le relais**: cocher
+   **Mode Test DLL**, renseigner les chemins vers `MES_HAI.dll` (dossier complet avec ses
+   dépendances, voir §3) et `MesHaiBridge.exe`, puis exécuter. Comptez ~1 à 2 minutes hors
+   réseau: la DLL essaie réellement les serveurs CIM, échoue proprement, et répond avec un vrai
+   statut métier (ex. `NotLogged`, ErrorCode 3) au lieu de planter — le relais, lui, reste
+   toujours désactivé dans ce mode.
 
    Après exécution, l'expander **"Journal MES_HAI.dll"** affiche le `Log\MES_HAI.log` généré par
    la DLL pendant cet appel (config trouvée, serveurs CIM essayés, erreurs réseau...).
+4. Pour la production: cocher **Mode Réel**, renseigner en plus le `relay-config.json`, puis
+   exécuter depuis le réseau Visteon avec le relais USB branché — le verdict MES déclenche alors
+   réellement le canal pass/fail.
 
 ## 2) Ligne de commande (pour automate/script externe)
 
@@ -97,6 +107,10 @@ MesRelayGateway.exe --xml C:\ProgramData\MESApps\CIM\MES_HAI.xml `
 MesRelayGateway.exe --dll C:\MESApps\ClientGateway\bridge\MES_HAI.dll `
   --bridge-exe C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe `
   --station STATION_01 --action login
+
+# Mode Test DLL - vraie DLL + vrai journal, jamais de relais, pas besoin du reseau Visteon
+MesRelayGateway.exe --mode dll-test --dll "dll Env\dll Env\MES_HAI.dll" `
+  --bridge-exe production\bridge\publish\MesHaiBridge.exe --station TEST_STATION --action login
 ```
 
 Actions supportées: `login`, `get-info`, `move-in` (flux login→get-info→move-in),
@@ -107,11 +121,12 @@ détail des étapes MES (chaque étape inclut `EngineLog`, le `Log\MES_HAI.log` 
 appel), la classification de l'erreur (`decision`) et le résultat de la commande relais (`relay`).
 Code de sortie 0 si le flux MES et (si configuré) le relais ont réussi, 1 sinon.
 
-## 3) Comment MES_HAI.dll est appelée en Mode Réel (bridge vs direct)
+## 3) Comment MES_HAI.dll est appelée (bridge vs direct), et tester sans réseau usine
 
 `bridgeExePath` (dans `client-config.json`, ou `--bridge-exe` en CLI, ou le champ
 "MesHaiBridge.exe" dans la GUI) pointe par défaut vers
-`C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe`. À chaque appel:
+`C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe`. En **Mode Test DLL** comme en **Mode Réel**,
+à chaque appel:
 
 - **Si ce fichier existe**: l'appel passe par `MesHaiBridge.exe` (un process par appel, requête
   JSON sur stdin, réponse JSON sur stdout) — le même bridge C# que
@@ -124,17 +139,19 @@ Code de sortie 0 si le flux MES et (si configuré) le relais ont réussi, 1 sino
 Les deux chemins produisent le même `MesResult` (ErrorCode/ErrorDescription/log) — le choix
 n'affecte que la façon dont la DLL est hébergée.
 
-**Tester sans être sur le réseau usine**: pointez `haiDllPath` vers le dossier qui contient
-`MES_HAI.dll` **et ses dépendances** (`LogLibrary.dll`, `log4net.dll`, `Newtonsoft.Json.dll` —
-dans ce dépôt, `dll Env\dll Env\`), lancez une action (ex. `login`). La DLL se charge, contacte
+**Tester sans être sur le réseau usine (Mode Test DLL)**: pointez `haiDllPath` vers le dossier
+qui contient `MES_HAI.dll` **et ses dépendances** (`LogLibrary.dll`, `log4net.dll`,
+`Newtonsoft.Json.dll` — dans ce dépôt, `dll Env\dll Env\`), choisissez le **Mode Test DLL**
+(GUI) ou `--mode dll-test` (CLI), lancez une action (ex. `login`). La DLL se charge, contacte
 réellement les serveurs CIM listés dans `MES_HAI.xml`, échoue à s'y connecter (hors réseau/VPN
 Visteon) et retourne un vrai statut métier — typiquement `ErrorCode 3 "NotLogged"` — au lieu de
-planter. C'est normal et attendu: ça valide tout le pipeline (chargement DLL, bridge, logging)
-sans nécessiter le VPN. Seul un `ErrorCode 0` (login réellement accepté) demande d'être sur le
-réseau Visteon. Comptez large sur le temps de réponse: `MES_HAI.dll` retente les deux serveurs
-CIM (primaire + secondaire), ~21s de timeout chacun, parfois deux fois — d'où le
-`bridgeTimeoutMs` par défaut de 120000ms (au lieu des 20000ms de production/orchestrator, calibrés
-pour un réseau qui répond).
+planter, avec le `Log\MES_HAI.log` réel en prime. C'est normal et attendu: ça valide tout le
+pipeline (chargement DLL, bridge, logging) sans nécessiter le VPN, **sans jamais piloter le
+relais** (désactivé d'office dans ce mode). Seul un `ErrorCode 0` (login réellement accepté)
+demande d'être sur le réseau Visteon — à tester alors en **Mode Réel**. Comptez large sur le
+temps de réponse: `MES_HAI.dll` retente les deux serveurs CIM (primaire + secondaire), ~21s de
+timeout chacun, parfois deux fois — d'où le `bridgeTimeoutMs` par défaut de 120000ms (au lieu
+des 20000ms de production/orchestrator, calibrés pour un réseau qui répond).
 
 ## 4) Dépendance native : usb_relay_device.dll
 

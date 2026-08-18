@@ -22,18 +22,26 @@ public partial class MainWindow : Window
         HistoryListView.ItemsSource = _history;
     }
 
-    private bool IsTestMode => ModeTestRadio.IsChecked == true;
+    private GatewayMode SelectedMode =>
+        ModeDllTestRadio.IsChecked == true ? GatewayMode.DllTest :
+        ModeRealRadio.IsChecked == true ? GatewayMode.Real :
+        GatewayMode.Mock;
 
-    // ── Mode Test / Reel ─────────────────────────────────────────────────
+    // ── Mode Test / Test DLL / Reel ────────────────────────────────────────
     private void OnModeChanged(object sender, RoutedEventArgs e)
     {
         // Fires during InitializeComponent (XAML sets IsChecked="True"), before the rest
         // of the window is built — bail out until every field we touch actually exists.
         if (ModeHintText is null) return;
 
-        ModeHintText.Text = IsTestMode
-            ? "Aucun fichier requis : donnees et relais simules."
-            : "Necessite MES_HAI.dll + MES_HAI.xml valides et, pour le relais, usb_relay_device.dll.";
+        ModeHintText.Text = SelectedMode switch
+        {
+            GatewayMode.Mock => "Aucun fichier requis : donnees et relais simules.",
+            GatewayMode.DllTest => "Charge et interroge reellement MES_HAI.dll (via MesHaiBridge.exe si renseigne, sinon en direct) et capture son " +
+                                    "log, mais ne declenche jamais le relais. Fonctionne sans reseau Visteon : hors reseau, la DLL renvoie un vrai " +
+                                    "statut metier (ex. ErrorCode 3 \"NotLogged\") au lieu de planter - comptez jusqu'a ~1-2 min pour qu'elle abandonne.",
+            _ => "Necessite MES_HAI.dll + MES_HAI.xml valides, le reseau/VPN Visteon et, pour le relais, usb_relay_device.dll.",
+        };
     }
 
     // ── Configuration ────────────────────────────────────────────────────
@@ -98,7 +106,7 @@ public partial class MainWindow : Window
     // ── Execution ────────────────────────────────────────────────────────
     private async void OnExecuteClick(object sender, RoutedEventArgs e)
     {
-        var isTest = IsTestMode;
+        var mode = SelectedMode;
         var action = ResolveAction();
         var station = StationTextBox.Text.Trim();
         var serial = SerialTextBox.Text.Trim();
@@ -111,7 +119,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(station))
         {
-            if (isTest) station = "TEST_STATION";
+            if (mode is GatewayMode.Mock or GatewayMode.DllTest) station = "TEST_STATION";
             else { MessageBox.Show(this, "Le nom de station est requis en mode reel.", "Champ manquant", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
         }
 
@@ -122,21 +130,23 @@ public partial class MainWindow : Window
         }
 
         ExecuteButton.IsEnabled = false;
-        StatusText.Text = "Execution en cours...";
+        StatusText.Text = mode == GatewayMode.DllTest
+            ? "Execution en cours (peut prendre jusqu'a 1-2 min hors reseau Visteon)..."
+            : "Execution en cours...";
         ResultBanner.Visibility = Visibility.Collapsed;
 
         try
         {
-            var outcome = await Task.Run(() => RunFlow(isTest, dllPath, bridgeExePath, haiInstance, relayConfigPath, station, action, serial, result));
-            ShowResult(isTest, outcome);
-            AddHistory(isTest, action, station, serial, outcome.Flow, error: null);
+            var outcome = await Task.Run(() => RunFlow(mode, dllPath, bridgeExePath, haiInstance, relayConfigPath, station, action, serial, result));
+            ShowResult(mode, outcome);
+            AddHistory(mode, action, station, serial, outcome.Flow, error: null);
             StatusText.Text = $"Termine a {DateTime.Now:HH:mm:ss} (mesClient={outcome.MesClientMode}).";
         }
         catch (Exception ex)
         {
             var effective = ex is System.Reflection.TargetInvocationException { InnerException: { } inner } ? inner : ex;
             ShowError(effective.Message);
-            AddHistory(isTest, action, station, serial, flow: null, error: effective.Message);
+            AddHistory(mode, action, station, serial, flow: null, error: effective.Message);
             StatusText.Text = $"Erreur a {DateTime.Now:HH:mm:ss}.";
         }
         finally
@@ -148,7 +158,7 @@ public partial class MainWindow : Window
     private sealed record FlowOutcome(FlowResult Flow, string MesClientMode);
 
     /// <summary>Runs off the UI thread: builds the MES client / relay driver for the chosen mode and calls GatewayRunner.</summary>
-    private static FlowOutcome RunFlow(bool isTest, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result)
+    private static FlowOutcome RunFlow(GatewayMode mode, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result)
     {
         RelayConfig? relayConfig = null;
         if (!string.IsNullOrWhiteSpace(relayConfigPath) && File.Exists(relayConfigPath))
@@ -157,12 +167,21 @@ public partial class MainWindow : Window
         }
 
         var mesClientMode = "mock";
-        using IMesClient mes = isTest
+        using IMesClient mes = mode == GatewayMode.Mock
             ? new MockMesClient()
             : CreateRealClient(dllPath, bridgeExePath, haiInstance, out mesClientMode);
-        IRelayDriver? relayDriver = relayConfig is null ? null : (isTest ? new MockRelayDriver() : new UsbRelayDriver());
 
-        var flow = GatewayRunner.Run(mes, relayDriver, relayConfig, station, action, serial, result, user: null, password: null);
+        // DllTest never touches the relay, even if a relay-config resolves — the point of
+        // this mode is to exercise MES_HAI.dll/its log safely, not the physical output.
+        IRelayDriver? relayDriver = mode switch
+        {
+            GatewayMode.Mock => relayConfig is null ? null : new MockRelayDriver(),
+            GatewayMode.DllTest => null,
+            GatewayMode.Real => relayConfig is null ? null : new UsbRelayDriver(),
+            _ => null,
+        };
+
+        var flow = GatewayRunner.Run(mes, relayDriver, mode == GatewayMode.DllTest ? null : relayConfig, station, action, serial, result, user: null, password: null);
         return new FlowOutcome(flow, mesClientMode);
     }
 
@@ -176,7 +195,7 @@ public partial class MainWindow : Window
     }
 
     // ── Affichage du resultat ────────────────────────────────────────────
-    private void ShowResult(bool isTest, FlowOutcome outcome)
+    private void ShowResult(GatewayMode mode, FlowOutcome outcome)
     {
         var flow = outcome.Flow;
         ResultBanner.Visibility = Visibility.Visible;
@@ -196,9 +215,14 @@ public partial class MainWindow : Window
             ResultTitleText.Foreground = new SolidColorBrush(Color.FromRgb(0xB7, 0x1C, 0x1C));
         }
 
-        var mode = isTest ? "TEST (simule)" : $"REEL ({outcome.MesClientMode})";
+        var modeLabel = mode switch
+        {
+            GatewayMode.Mock => "TEST (simule)",
+            GatewayMode.DllTest => $"TEST DLL ({outcome.MesClientMode}, relais desactive)",
+            _ => $"REEL ({outcome.MesClientMode})",
+        };
         ResultDetailText.Text =
-            $"Mode: {mode}  |  Action: {flow.Action}  |  Station: {flow.Station}  |  Serie: {flow.SerialNumber ?? "-"}\n" +
+            $"Mode: {modeLabel}  |  Action: {flow.Action}  |  Station: {flow.Station}  |  Serie: {flow.SerialNumber ?? "-"}\n" +
             $"MES: ErrorCode={flow.FinalResult.ErrorCode?.ToString() ?? "-"}  ErrorDescription={flow.FinalResult.ErrorDescription ?? "-"}";
 
         ResultRelayText.Text = flow.Relay switch
@@ -206,6 +230,7 @@ public partial class MainWindow : Window
             { } r when r.Ok => $"Relais: canal {r.Channel} declenche ({r.Verdict}), carte {r.BoardSerialNumber}{(r.Simulated ? " [simule]" : "")}.",
             { } r => $"Relais: ECHEC canal {r.Channel} ({r.Verdict}) - {r.Error}",
             null when flow.RelayNote is not null => flow.RelayNote,
+            null when mode == GatewayMode.DllTest => "Relais: volontairement desactive en Mode Test DLL.",
             _ => "Relais: non configure.",
         };
 
@@ -250,12 +275,19 @@ public partial class MainWindow : Window
         _ => decision.Reason,
     };
 
-    private void AddHistory(bool isTest, MesAction action, string station, string serial, FlowResult? flow, string? error)
+    private void AddHistory(GatewayMode mode, MesAction action, string station, string serial, FlowResult? flow, string? error)
     {
+        var modeLabel = mode switch
+        {
+            GatewayMode.Mock => "Test",
+            GatewayMode.DllTest => "Test DLL",
+            _ => "Reel",
+        };
+
         _history.Insert(0, new HistoryEntry
         {
             Time = DateTime.Now.ToString("HH:mm:ss"),
-            Mode = isTest ? "Test" : "Reel",
+            Mode = modeLabel,
             Action = action.ToString(),
             Station = station,
             Serial = string.IsNullOrWhiteSpace(serial) ? "-" : serial,
