@@ -90,17 +90,43 @@ public sealed class MesClient : IMesClient
     private MesResult BuildResult(string action, object? raw)
     {
         var flattened = ObjectGraphFlattener.Flatten(raw);
-        var errorCode = TryGetNestedInt(raw, "ErrorCode");
-        var errorDescription = TryGetNestedString(raw, "ErrorDescription");
+        var (errorCode, errorDescription) = ExtractErrorInfo(raw);
 
         return new MesResult
         {
-            Ok = !errorCode.HasValue || errorCode.Value == 0,
+            // Conservative on purpose: a call is only "Ok" when MES explicitly says
+            // ErrorCode 0. If we can't determine a code at all (unexpected return shape),
+            // treat it as failed rather than silently letting a bad part pass.
+            Ok = errorCode == 0,
             Action = action,
             ErrorCode = errorCode,
             ErrorDescription = errorDescription,
             Result = flattened,
         };
+    }
+
+    /// <summary>
+    /// Some Traceability methods (observed: Login) return the status directly as an enum
+    /// (e.g. Results.NotLogged = 3) rather than an object with ErrorCode/ErrorDescription
+    /// properties. Others wrap it in a nested "ErrorDetail" object. Handle all three shapes.
+    /// </summary>
+    private static (int? Code, string? Description) ExtractErrorInfo(object? raw)
+    {
+        if (raw is null) return (null, null);
+
+        if (raw.GetType().IsEnum)
+        {
+            return (Convert.ToInt32(raw), raw.ToString());
+        }
+
+        var code = TryGetNestedInt(raw, "ErrorCode");
+        var description = TryGetNestedString(raw, "ErrorDescription");
+        if (code.HasValue || description is not null) return (code, description);
+
+        var errorDetail = TryGetNestedObject(raw, "ErrorDetail");
+        return errorDetail is null
+            ? (null, null)
+            : (TryGetNestedInt(errorDetail, "ErrorCode"), TryGetNestedString(errorDetail, "ErrorDescription"));
     }
 
     private object? Invoke(string methodName, params object?[] args)
@@ -153,6 +179,13 @@ public sealed class MesClient : IMesClient
         if (Enum.TryParse(enumType, raw, ignoreCase: true, out var parsed)) return parsed!;
         if (int.TryParse(raw, out var numeric)) return Enum.ToObject(enumType, numeric);
         throw new ArgumentException($"Impossible de convertir '{raw}' en '{enumType.Name}'.");
+    }
+
+    private static object? TryGetNestedObject(object? obj, string propertyName)
+    {
+        if (obj is null) return null;
+        var p = obj.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        return p?.GetValue(obj);
     }
 
     private static string? TryGetNestedString(object? obj, string propertyName)
