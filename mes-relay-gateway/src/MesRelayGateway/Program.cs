@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MesRelayGateway.Configuration;
+using MesRelayGateway.Flow;
 using MesRelayGateway.Mes;
 using MesRelayGateway.Relay;
 
@@ -63,23 +64,15 @@ public static class Program
         var haiInstance = options.HaiInstanceOverride ?? gatewayConfig.HaiInstanceName;
         var relayConfigPath = options.RelayConfigPathOverride ?? gatewayConfig.RelayConfigPath;
 
-        if (!File.Exists(xmlPath))
-        {
-            throw new FileNotFoundException($"MES_HAI.xml introuvable: {xmlPath}", xmlPath);
-        }
-        if (!File.Exists(dllPath))
-        {
-            throw new FileNotFoundException($"MES_HAI.dll introuvable: {dllPath}", dllPath);
-        }
-
         var station = ResolveStationName(options, gatewayConfig);
-        var servers = MesServerConfig.Load(xmlPath);
+
+        IReadOnlyList<MesServer> servers = Array.Empty<MesServer>();
+        RelayConfig? relayConfig = null;
+        string? relaySkippedReason = null;
 
         // Relay config is optional: if the resolved path (explicit or default) does not
         // exist, the relay step is simply skipped rather than treated as an error — not
         // every station has the USB relay wired up yet.
-        RelayConfig? relayConfig = null;
-        string? relaySkippedReason = null;
         if (!string.IsNullOrWhiteSpace(relayConfigPath))
         {
             if (File.Exists(relayConfigPath))
@@ -92,55 +85,47 @@ public static class Program
             }
         }
 
-        // ── 2) Appel MES (login puis action demandee) ───────────────────────────
-        using var mes = MesClient.Load(dllPath, haiInstance);
+        // ── 2) Choix Mode Test (simulation) vs Mode Reel (DLL + relais physiques) ────────
+        using IMesClient mes = options.IsTestMode
+            ? new MockMesClient()
+            : LoadRealMesClient(xmlPath, dllPath, haiInstance, out servers);
 
-        var steps = new List<MesResult>();
-        var login = mes.Login(station, options.User, options.Password);
-        steps.Add(login);
+        IRelayDriver? relayDriver = relayConfig is null ? null : (options.IsTestMode ? new MockRelayDriver() : new UsbRelayDriver());
 
-        MesResult finalResult = login;
-
-        if (login.Ok)
-        {
-            finalResult = options.Action switch
-            {
-                MesAction.Login => login,
-                MesAction.GetInfo => RunAndTrack(steps, () => mes.GetInfo(station, options.SerialNumber!)),
-                MesAction.MoveIn => RunMoveIn(mes, steps, station, options.SerialNumber!),
-                MesAction.MoveOutAndTest => RunAndTrack(steps, () => mes.MoveOutAndTest(
-                    station, options.SerialNumber!, options.Result, groupId: "", groupVersion: "", layer: 0, checkMultiBoard: false)),
-                _ => throw new InvalidOperationException($"Action non geree: {options.Action}"),
-            };
-        }
-
-        // ── 3) Detection / classification de l'erreur MES ───────────────────────
-        var decision = ErrorClassifier.Classify(finalResult.ErrorCode, finalResult.ErrorDescription);
-
-        // ── 4) Sortie commande via relais USB (si configure) ────────────────────
-        Dictionary<string, object?>? relayReport = null;
-        if (relayConfig is not null)
-        {
-            relayReport = TriggerRelay(relayConfig, decision);
-        }
-
-        var overallOk = finalResult.Ok && (relayReport is null || (bool)(relayReport["ok"] ?? false));
+        // ── 3) Appel MES + classification d'erreur + sortie relais ──────────────────────
+        var flow = GatewayRunner.Run(mes, relayDriver, relayConfig, station, options.Action, options.SerialNumber, options.Result, options.User, options.Password);
 
         PrintJson(new Dictionary<string, object?>
         {
-            ["ok"] = overallOk,
-            ["action"] = options.Action.ToString(),
-            ["station"] = station,
-            ["serialNumber"] = options.SerialNumber,
+            ["ok"] = flow.Ok,
+            ["mode"] = options.IsTestMode ? "test" : "real",
+            ["action"] = flow.Action.ToString(),
+            ["station"] = flow.Station,
+            ["serialNumber"] = flow.SerialNumber,
             ["config"] = new { xmlPath, dllPath, haiInstance, relayConfigPath },
             ["mesServers"] = servers.Select(s => new { s.IpAddress, s.Port, s.Description }),
-            ["steps"] = steps.Select(s => new { s.Action, s.Ok, s.ErrorCode, s.ErrorDescription, s.Result }),
-            ["decision"] = decision,
-            ["relay"] = relayReport,
-            ["relayNote"] = relaySkippedReason,
+            ["steps"] = flow.Steps.Select(s => new { s.Action, s.Ok, s.ErrorCode, s.ErrorDescription, s.Result }),
+            ["decision"] = flow.Decision,
+            ["relay"] = flow.Relay,
+            ["relayNote"] = relaySkippedReason ?? flow.RelayNote,
         });
 
-        return overallOk ? 0 : 1;
+        return flow.Ok ? 0 : 1;
+    }
+
+    private static IMesClient LoadRealMesClient(string xmlPath, string dllPath, string haiInstance, out IReadOnlyList<MesServer> servers)
+    {
+        if (!File.Exists(xmlPath))
+        {
+            throw new FileNotFoundException($"MES_HAI.xml introuvable: {xmlPath}", xmlPath);
+        }
+        if (!File.Exists(dllPath))
+        {
+            throw new FileNotFoundException($"MES_HAI.dll introuvable: {dllPath}", dllPath);
+        }
+
+        servers = MesServerConfig.Load(xmlPath);
+        return MesClient.Load(dllPath, haiInstance);
     }
 
     private static string ResolveStationName(AppOptions options, GatewayConfig gatewayConfig)
@@ -154,53 +139,9 @@ public static class Program
             if (!string.IsNullOrWhiteSpace(ini.StationName)) return ini.StationName;
         }
 
+        if (options.IsTestMode) return "TEST_STATION";
+
         throw new ArgumentException("Aucun nom de station: fournir --station, un --config avec stationName, ou --ini avec StationName.");
-    }
-
-    private static MesResult RunAndTrack(List<MesResult> steps, Func<MesResult> action)
-    {
-        var result = action();
-        steps.Add(result);
-        return result;
-    }
-
-    private static MesResult RunMoveIn(MesClient mes, List<MesResult> steps, string station, string serialNumber)
-    {
-        var info = mes.GetInfo(station, serialNumber);
-        steps.Add(info);
-        if (!info.Ok) return info;
-
-        var moveIn = mes.MoveIn(station, serialNumber, activateWorkOrder: true, layer: 0);
-        steps.Add(moveIn);
-        return moveIn;
-    }
-
-    private static Dictionary<string, object?> TriggerRelay(RelayConfig relayConfig, ErrorDecision decision)
-    {
-        var channel = decision.Verdict == RelayVerdict.Pass ? relayConfig.PassChannel : relayConfig.FailChannel;
-        try
-        {
-            using var relay = UsbRelayController.Open(relayConfig.RelaySerialNumber);
-            relay.PulseChannel(channel, relayConfig.PulseMs);
-            return new Dictionary<string, object?>
-            {
-                ["ok"] = true,
-                ["boardSerialNumber"] = relay.SerialNumber,
-                ["channel"] = channel,
-                ["verdict"] = decision.Verdict.ToString(),
-                ["pulseMs"] = relayConfig.PulseMs,
-            };
-        }
-        catch (Exception ex)
-        {
-            return new Dictionary<string, object?>
-            {
-                ["ok"] = false,
-                ["channel"] = channel,
-                ["verdict"] = decision.Verdict.ToString(),
-                ["error"] = ex.Message,
-            };
-        }
     }
 
     private static void PrintJson(object payload)

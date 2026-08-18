@@ -9,7 +9,8 @@ param(
   [int]$RelayPassChannel = 1,
   [int]$RelayFailChannel = 2,
   [int]$RelayPulseMs = 500,
-  [switch]$BuildIfNeeded
+  [switch]$BuildIfNeeded,
+  [switch]$WithGui
 )
 
 Set-StrictMode -Version Latest
@@ -58,6 +59,34 @@ function Resolve-RelayGatewayBinaryPath {
   return $exePath
 }
 
+function Resolve-RelayGatewayGuiBinaryPath {
+  param(
+    [string]$ProjectRootPath,
+    [switch]$TryBuild
+  )
+
+  $csproj = Join-Path $ProjectRootPath "src\MesRelayGateway.Gui\MesRelayGateway.Gui.csproj"
+  $publishDir = Join-Path $ProjectRootPath "publish-gui"
+  $exePath = Join-Path $publishDir "MesRelayGatewayGui.exe"
+
+  if (Test-Path -LiteralPath $exePath -PathType Leaf) {
+    return $exePath
+  }
+
+  if (-not $TryBuild) {
+    throw "MesRelayGatewayGui.exe introuvable dans $publishDir. Activez -BuildIfNeeded ou publiez le projet avant (dotnet publish -r win-x64 --self-contained false -o publish-gui)."
+  }
+
+  Assert-File $csproj "Projet MesRelayGateway.Gui"
+  Write-Step "Compilation MesRelayGateway.Gui (dotnet publish)"
+  & dotnet publish $csproj -c Release -r win-x64 --self-contained false -o $publishDir | Out-Host
+
+  if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
+    throw "Compilation terminee mais MesRelayGatewayGui.exe absent: $exePath"
+  }
+  return $exePath
+}
+
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path
 $embarqueRoot = (Resolve-Path (Join-Path $projectRoot "..")).Path
@@ -88,6 +117,13 @@ New-Item -ItemType Directory -Force -Path $InstallRoot, $bridgeDir, $relayGatewa
 
 Write-Step "Copie de MesRelayGateway.exe + dependances"
 Copy-Item -Path (Join-Path $publishDir "*") -Destination $relayGatewayDir -Force
+
+if ($WithGui) {
+  $guiExeSource = Resolve-RelayGatewayGuiBinaryPath -ProjectRootPath $projectRoot -TryBuild:$BuildIfNeeded
+  $guiPublishDir = Split-Path -Parent $guiExeSource
+  Write-Step "Copie de MesRelayGatewayGui.exe + dependances"
+  Copy-Item -Path (Join-Path $guiPublishDir "*") -Destination $relayGatewayDir -Force
+}
 
 Write-Step "Copie de MES_HAI.dll (partagee avec le bridge C#)"
 Copy-Item -LiteralPath $mesDllSource -Destination (Join-Path $bridgeDir "MES_HAI.dll") -Force
@@ -135,6 +171,9 @@ Write-Host "InstallRoot          : $InstallRoot"
 Write-Host "MES XML              : $(Join-Path $ProgramDataCimPath 'MES_HAI.xml')"
 Write-Host "MES DLL              : $(Join-Path $bridgeDir 'MES_HAI.dll')"
 Write-Host "MesRelayGateway.exe  : $(Join-Path $relayGatewayDir 'MesRelayGateway.exe')"
+if ($WithGui) {
+  Write-Host "MesRelayGatewayGui.exe : $(Join-Path $relayGatewayDir 'MesRelayGatewayGui.exe')"
+}
 Write-Host "Config               : $clientConfigPath"
 Write-Host "Relay config         : $relayConfigPath"
 Write-Host ""

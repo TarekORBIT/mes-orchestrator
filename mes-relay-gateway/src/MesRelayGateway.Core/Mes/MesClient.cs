@@ -7,7 +7,7 @@ namespace MesRelayGateway.Mes;
 /// production/bridge/Program.cs does, but scoped to the 4 actions this tool drives:
 /// Login, Serial_GetInformation, Serial_MoveIn, Serial_MoveOutAndTestResults.
 /// </summary>
-public sealed class MesClient : IDisposable
+public sealed class MesClient : IMesClient
 {
     private readonly Assembly _assembly;
     private readonly object _traceability;

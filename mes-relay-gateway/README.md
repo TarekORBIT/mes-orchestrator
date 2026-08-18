@@ -1,41 +1,64 @@
 # MES Relay Gateway
 
-Outil .NET (C#) autonome, compilé en `.exe` Windows, qui:
+Outils .NET (C#) autonomes, compilés en `.exe` Windows, qui:
 
-1. Lit sa configuration (`MES_HAI.xml`, `MES_HAI.dll`, nom de station, mapping relais) depuis des
-   **chemins de fichiers fournis en entrée** — via `--config client-config.json` et/ou des
-   `--flag` en ligne de commande. Rien n'est codé en dur au-delà des valeurs par défaut, qui
-   reprennent les chemins de déploiement déjà utilisés par [`production/`](../production):
+1. Lisent leur configuration (`MES_HAI.xml`, `MES_HAI.dll`, nom de station, mapping relais) depuis des
+   **chemins de fichiers fournis en entrée** — via un fichier `client-config.json`, des champs dans
+   l'interface graphique, et/ou des `--flag` en ligne de commande. Rien n'est codé en dur au-delà
+   des valeurs par défaut, qui reprennent les chemins de déploiement déjà utilisés par
+   [`production/`](../production):
    - `C:\ProgramData\MESApps\CIM\MES_HAI.xml`
    - `C:\MESApps\ClientGateway\bridge\MES_HAI.dll`
-2. Se connecte au MES (login, get-info, move-in, move-out-and-test) en chargeant `MES_HAI.dll`
+2. Se connectent au MES (login, get-info, move-in, move-out-and-test) en chargeant `MES_HAI.dll`
    par réflexion — même principe que [`production/bridge/Program.cs`](../production/bridge/Program.cs).
-3. **Détecte l'erreur** retournée par le MES (`ErrorCode` / `ErrorDescription`) et la classe
+3. **Détectent l'erreur** retournée par le MES (`ErrorCode` / `ErrorDescription`) et la classent
    (session expirée, station invalide, panne réseau, erreur métier...) — portage direct de
    `classifyErrorDetail` dans [`production/orchestrator/mes-orchestrator.js`](../production/orchestrator/mes-orchestrator.js).
-4. **Déclenche une sortie physique via un relais USB** (carte HID compatible
+4. **Déclenchent une sortie physique via un relais USB** (carte HID compatible
    [usb-relay-hid](https://github.com/pavel-a/usb-relay-hid)) selon le verdict: un canal pour
    "pass", un canal pour "fail/reject".
 
-Ce n'est pas un service qui tourne en continu comme l'orchestrateur Node — c'est un exécutable
-qu'on appelle une fois par pièce/action (depuis un automate, un script, un déclencheur externe),
-qui fait son travail et rend un code de sortie (0 = OK, 1 = erreur) plus un rapport JSON sur stdout.
+Deux **modes**, disponibles aussi bien dans la GUI qu'en ligne de commande:
+- **Mode Test** : simulation complète (MES et relais tous les deux simulés), aucun fichier ni
+  matériel requis — pour apprendre l'outil ou vérifier la logique de classification d'erreur.
+- **Mode Réel** : appel effectif à `MES_HAI.dll` et au relais USB physique — nécessite le réseau
+  usine/VPN Visteon et le matériel branché.
 
 ## Structure
 
 ```
 mes-relay-gateway/
-  src/MesRelayGateway/        Projet C# (.csproj, Program.cs)
-    Configuration/             Lecture config (client-config.json, station.ini, relay-config.json, CLI)
-    Mes/                       Client MES (réflexion MES_HAI.dll) + classification d'erreurs
-    Relay/                     P/Invoke usb_relay_device.dll + contrôleur haut niveau
-  config/                      Templates de configuration
-  install/                     Script d'installation client (PowerShell)
+  MesRelayGateway.sln
+  src/
+    MesRelayGateway.Core/       Logique partagee (config, client MES, relais, classification,
+                                 GatewayRunner) + implementations mock pour le Mode Test
+    MesRelayGateway/             CLI (Program.cs) - pour automate/script externe
+    MesRelayGateway.Gui/         Interface graphique WPF - pour un usage manuel/technicien
+  config/                        Templates de configuration
+  install/                       Script d'installation client (PowerShell)
 ```
 
-## 1) Compiler
+## 1) Interface graphique (recommandé pour découvrir/tester l'outil)
 
-Prérequis: .NET SDK 8 (`dotnet --version`).
+```powershell
+cd mes-relay-gateway\src\MesRelayGateway.Gui
+dotnet publish .\MesRelayGateway.Gui.csproj -c Release -r win-x64 --self-contained false -o ..\..\publish-gui
+..\..\publish-gui\MesRelayGatewayGui.exe
+```
+
+La fenêtre s'ouvre directement en **Mode Test** (aucun fichier requis, tout est simulé):
+
+1. Choisir l'action (`Login`, `Get Info`, `Move In`, `Move Out + Test`), un numéro de série
+   (`SN001` ou `SN002` sont "connus" en mode test, tout autre numéro renvoie une erreur simulée
+   "SerialNotFound"), et cliquer **Exécuter**.
+2. Le résultat s'affiche en clair (bandeau vert = OK, rouge = erreur, avec l'explication), plus le
+   détail technique (JSON) repliable, et un historique des essais en bas de fenêtre.
+3. Pour passer en conditions réelles: cocher **Mode Réel**, renseigner (ou charger via
+   *"Charger client-config.json..."*) les chemins vers `MES_HAI.xml`, `MES_HAI.dll`, le nom de
+   station, et le fichier `relay-config.json` — puis exécuter depuis le réseau Visteon avec le
+   relais USB branché.
+
+## 2) Ligne de commande (pour automate/script externe)
 
 ```powershell
 cd mes-relay-gateway\src\MesRelayGateway
@@ -44,44 +67,15 @@ dotnet publish .\MesRelayGateway.csproj -c Release -r win-x64 --self-contained f
 
 Sortie attendue: `mes-relay-gateway\publish\MesRelayGateway.exe`
 
-## 2) Dépendance native : usb_relay_device.dll
-
-Ce dépôt **ne fournit pas** la DLL native du relais. Elle vient du projet
-[pavel-a/usb-relay-hid](https://github.com/pavel-a/usb-relay-hid) (build officiel ou fourni par
-le vendeur de la carte). Placez `usb_relay_device.dll` (architecture x86 ou x64, cohérente avec
-la façon dont `MesRelayGateway.exe` a été publié) **à côté de `MesRelayGateway.exe`**.
-
-Sans cette DLL, l'outil fonctionne quand même pour lire la config et parler au MES — seule
-l'étape de déclenchement du relais échoue (erreur explicite dans le rapport JSON, `relay.ok: false`).
-
-## 3) Installer sur le PC client
-
-PowerShell en administrateur:
-
 ```powershell
-cd mes-relay-gateway\install
-.\install-relay-gateway.ps1 -StationName "STATION_01" -BuildIfNeeded `
-  -RelayPassChannel 1 -RelayFailChannel 2
-```
+# Mode test - aucun fichier requis
+MesRelayGateway.exe --mode test --station TEST_STATION --action move-in --serial SN001
 
-Déploie par défaut:
-
-- `C:\ProgramData\MESApps\CIM\MES_HAI.xml`
-- `C:\MESApps\ClientGateway\bridge\MES_HAI.dll` (partagée avec le bridge C# existant)
-- `C:\MESApps\ClientGateway\relay-gateway\MesRelayGateway.exe`
-- `C:\MESApps\ClientGateway\relay-gateway\config\client-config.json`
-- `C:\MESApps\ClientGateway\relay-gateway\config\relay-config.json`
-
-Le script rappelle si `usb_relay_device.dll` doit encore être copiée manuellement.
-
-## 4) Utilisation
-
-```powershell
-# Via le fichier de config genere par l'installation
+# Mode reel, via le fichier de config genere par l'installation
 MesRelayGateway.exe --config C:\MESApps\ClientGateway\relay-gateway\config\client-config.json `
   --action move-out-and-test --serial SN001 --result Pass
 
-# Ou entierement en ligne de commande, sans fichier config
+# Mode reel, entierement en ligne de commande, sans fichier config
 MesRelayGateway.exe --xml C:\ProgramData\MESApps\CIM\MES_HAI.xml `
   --dll C:\MESApps\ClientGateway\bridge\MES_HAI.dll `
   --station STATION_01 --action get-info --serial SN001
@@ -93,6 +87,39 @@ Actions supportées: `login`, `get-info`, `move-in` (flux login→get-info→mov
 Sortie: un objet JSON sur stdout avec le détail des étapes MES, la classification de l'erreur
 (`decision`) et le résultat de la commande relais (`relay`). Code de sortie 0 si le flux MES et
 (si configuré) le relais ont réussi, 1 sinon.
+
+## 3) Dépendance native : usb_relay_device.dll
+
+Ce dépôt **ne fournit pas** la DLL native du relais. Elle vient du projet
+[pavel-a/usb-relay-hid](https://github.com/pavel-a/usb-relay-hid) (build officiel ou fourni par
+le vendeur de la carte). En Mode Réel, placez `usb_relay_device.dll` (architecture x86 ou x64,
+cohérente avec la façon dont l'exe a été publié) **à côté de `MesRelayGateway.exe` /
+`MesRelayGatewayGui.exe`**.
+
+Sans cette DLL, l'outil fonctionne quand même pour lire la config et parler au MES — seule
+l'étape de déclenchement du relais échoue (erreur explicite, `relay.ok: false`). En Mode Test,
+elle n'est jamais nécessaire.
+
+## 4) Installer sur le PC client
+
+PowerShell en administrateur:
+
+```powershell
+cd mes-relay-gateway\install
+.\install-relay-gateway.ps1 -StationName "STATION_01" -BuildIfNeeded -WithGui `
+  -RelayPassChannel 1 -RelayFailChannel 2
+```
+
+Déploie par défaut:
+
+- `C:\ProgramData\MESApps\CIM\MES_HAI.xml`
+- `C:\MESApps\ClientGateway\bridge\MES_HAI.dll` (partagée avec le bridge C# existant)
+- `C:\MESApps\ClientGateway\relay-gateway\MesRelayGateway.exe`
+- `C:\MESApps\ClientGateway\relay-gateway\MesRelayGatewayGui.exe` (si `-WithGui`)
+- `C:\MESApps\ClientGateway\relay-gateway\config\client-config.json`
+- `C:\MESApps\ClientGateway\relay-gateway\config\relay-config.json`
+
+Le script rappelle si `usb_relay_device.dll` doit encore être copiée manuellement.
 
 ## 5) Configuration du mapping relais
 
