@@ -150,11 +150,11 @@
                 <TextBlock x:Name="ResultDetailText" TextWrapping="Wrap" Margin="0,4,0,0"/>
                 <TextBlock x:Name="ResultRelayText" TextWrapping="Wrap" Margin="0,4,0,0" FontStyle="Italic"/>
                 <Expander x:Name="EngineLogExpander" Header="Journal MES_HAI.dll (Log\MES_HAI.log)" Margin="0,8,0,0" Visibility="Collapsed">
-                    <TextBox x:Name="EngineLogText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11"
-                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="260" Margin="0,6,0,0"/>
+                    <TextBox x:Name="EngineLogText" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="320" Height="320" Margin="0,6,0,0"/>
                 </Expander>
                 <Expander Header="Details techniques (JSON)" Margin="0,8,0,0">
-                    <TextBox x:Name="ResultJsonText" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
+                    <TextBox x:Name="ResultJsonText" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="NoWrap" FontFamily="Consolas"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="220" Margin="0,6,0,0"/>
                 </Expander>
             </StackPanel>
