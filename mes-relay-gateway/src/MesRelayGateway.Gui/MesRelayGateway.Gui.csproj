@@ -8,7 +8,11 @@
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- WPF's XAML binding engine needs real culture data (XmlLanguage.GetSpecificCulture);
+         InvariantGlobalization=true makes every window crash on show with
+         "Cannot find non-neutral culture related to 'en-us'." Keep it off here even though
+         Core/Console use it. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
 
     <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
     <SelfContained>false</SelfContained>
