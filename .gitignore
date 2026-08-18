@@ -17,3 +17,4 @@ Thumbs.db
 # Editor
 .vs/
 .vscode/
+.claude/

@@ -2,7 +2,9 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using MesRelayGateway.Configuration;
 using MesRelayGateway.Flow;
@@ -16,10 +18,15 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<HistoryEntry> _history = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
+    private DispatcherTimer? _liveLogTimer;
+    private string? _liveLogPath;
+    private long _liveLogOffset;
+
     public MainWindow()
     {
         InitializeComponent();
         HistoryListView.ItemsSource = _history;
+        ResetDiagram();
     }
 
     private GatewayMode SelectedMode =>
@@ -40,7 +47,7 @@ public partial class MainWindow : Window
             GatewayMode.DllTest => "Charge et interroge reellement MES_HAI.dll (via MesHaiBridge.exe si renseigne, sinon en direct) et capture son " +
                                     "log, mais ne declenche jamais le relais. Fonctionne sans reseau Visteon : hors reseau, la DLL renvoie un vrai " +
                                     "statut metier (ex. ErrorCode 3 \"NotLogged\") au lieu de planter - comptez jusqu'a ~1-2 min pour qu'elle abandonne.",
-            _ => "Necessite MES_HAI.dll + MES_HAI.xml valides, le reseau/VPN Visteon et, pour le relais, usb_relay_device.dll.",
+            _ => "Necessite MES_HAI.dll + MES_HAI.xml valides, le reseau/VPN Visteon (les adresses IP de MES_HAI.xml doivent repondre) et, pour le relais, usb_relay_device.dll.",
         };
     }
 
@@ -73,7 +80,7 @@ public partial class MainWindow : Window
     private void OnBrowseBridgeExeClick(object sender, RoutedEventArgs e) => BrowseFile(BridgeExePathTextBox, "MesHaiBridge.exe|*.exe|Tous les fichiers|*.*");
     private void OnBrowseRelayConfigClick(object sender, RoutedEventArgs e) => BrowseFile(RelayConfigPathTextBox, "relay-config.json|*.json|Tous les fichiers|*.*");
 
-    private void BrowseFile(System.Windows.Controls.TextBox target, string filter)
+    private void BrowseFile(TextBox target, string filter)
     {
         var dialog = new OpenFileDialog { Filter = filter };
         if (dialog.ShowDialog(this) == true)
@@ -83,7 +90,7 @@ public partial class MainWindow : Window
     }
 
     // ── Action ───────────────────────────────────────────────────────────
-    private void OnActionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    private void OnActionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (SerialTextBox is null || ResultComboBox is null || ResultLabel is null) return;
 
@@ -110,7 +117,7 @@ public partial class MainWindow : Window
         var action = ResolveAction();
         var station = StationTextBox.Text.Trim();
         var serial = SerialTextBox.Text.Trim();
-        var result = ((System.Windows.Controls.ComboBoxItem)ResultComboBox.SelectedItem)?.Content?.ToString() ?? "Pass";
+        var result = ((ComboBoxItem)ResultComboBox.SelectedItem)?.Content?.ToString() ?? "Pass";
         var xmlPath = XmlPathTextBox.Text.Trim();
         var dllPath = DllPathTextBox.Text.Trim();
         var bridgeExePath = BridgeExePathTextBox.Text.Trim();
@@ -134,16 +141,20 @@ public partial class MainWindow : Window
             ? "Execution en cours (peut prendre jusqu'a 1-2 min hors reseau Visteon)..."
             : "Execution en cours...";
         ResultBanner.Visibility = Visibility.Collapsed;
+        ResetDiagram();
+        StartLiveLog(mode, dllPath, bridgeExePath);
 
         try
         {
-            var outcome = await Task.Run(() => RunFlow(mode, dllPath, bridgeExePath, haiInstance, relayConfigPath, station, action, serial, result));
+            var outcome = await Task.Run(() => RunFlow(mode, dllPath, bridgeExePath, haiInstance, relayConfigPath, station, action, serial, result, HighlightStep));
+            StopLiveLog();
             ShowResult(mode, outcome);
             AddHistory(mode, action, station, serial, outcome.Flow, error: null);
             StatusText.Text = $"Termine a {DateTime.Now:HH:mm:ss} (mesClient={outcome.MesClientMode}).";
         }
         catch (Exception ex)
         {
+            StopLiveLog();
             var effective = ex is System.Reflection.TargetInvocationException { InnerException: { } inner } ? inner : ex;
             ShowError(effective.Message);
             AddHistory(mode, action, station, serial, flow: null, error: effective.Message);
@@ -158,7 +169,7 @@ public partial class MainWindow : Window
     private sealed record FlowOutcome(FlowResult Flow, string MesClientMode);
 
     /// <summary>Runs off the UI thread: builds the MES client / relay driver for the chosen mode and calls GatewayRunner.</summary>
-    private static FlowOutcome RunFlow(GatewayMode mode, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result)
+    private static FlowOutcome RunFlow(GatewayMode mode, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result, Action<GatewayStep> onStep)
     {
         RelayConfig? relayConfig = null;
         if (!string.IsNullOrWhiteSpace(relayConfigPath) && File.Exists(relayConfigPath))
@@ -181,7 +192,7 @@ public partial class MainWindow : Window
             _ => null,
         };
 
-        var flow = GatewayRunner.Run(mes, relayDriver, mode == GatewayMode.DllTest ? null : relayConfig, station, action, serial, result, user: null, password: null);
+        var flow = GatewayRunner.Run(mes, relayDriver, mode == GatewayMode.DllTest ? null : relayConfig, station, action, serial, result, user: null, password: null, onStep);
         return new FlowOutcome(flow, mesClientMode);
     }
 
@@ -194,11 +205,199 @@ public partial class MainWindow : Window
         return created.Client;
     }
 
+    // ── Journal en temps reel ────────────────────────────────────────────
+    private void StartLiveLog(GatewayMode mode, string dllPath, string bridgeExePath)
+    {
+        StopLiveLog();
+        EngineLogText.Text = string.Empty;
+
+        if (mode == GatewayMode.Mock)
+        {
+            EngineLogExpander.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // Mirror MesClientFactory's own bridge-vs-direct choice so we watch the right file:
+        // MesHaiBridge.exe writes Log\MES_HAI.log next to itself; a direct in-process load
+        // writes it next to this GUI's own exe (AppContext.BaseDirectory).
+        var usesBridge = !string.IsNullOrWhiteSpace(bridgeExePath) && File.Exists(bridgeExePath);
+        _liveLogPath = usesBridge
+            ? Path.Combine(Path.GetDirectoryName(bridgeExePath)!, "Log", "MES_HAI.log")
+            : Path.Combine(AppContext.BaseDirectory, "Log", "MES_HAI.log");
+        _liveLogOffset = MesLogReader.GetLength(_liveLogPath);
+
+        EngineLogExpander.Visibility = Visibility.Visible;
+        EngineLogExpander.IsExpanded = true;
+
+        _liveLogTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _liveLogTimer.Tick += (_, _) => PollLiveLog();
+        _liveLogTimer.Start();
+    }
+
+    private void PollLiveLog()
+    {
+        if (_liveLogPath is null) return;
+        var len = MesLogReader.GetLength(_liveLogPath);
+        if (len <= _liveLogOffset) return;
+
+        var chunk = MesLogReader.ReadFrom(_liveLogPath, _liveLogOffset);
+        _liveLogOffset = len;
+        if (!string.IsNullOrEmpty(chunk))
+        {
+            EngineLogText.AppendText(chunk);
+            EngineLogText.ScrollToEnd();
+        }
+    }
+
+    private void StopLiveLog()
+    {
+        if (_liveLogTimer is null) return;
+        _liveLogTimer.Stop();
+        _liveLogTimer = null;
+        PollLiveLog(); // catch anything written between the last tick and the process exiting
+    }
+
+    // ── Diagramme d'execution ────────────────────────────────────────────
+    private enum DiagramNodeState { Pending, Active, Ok, Fail }
+
+    private static readonly SolidColorBrush PendingBg = new(Color.FromRgb(0xEC, 0xEF, 0xF1));
+    private static readonly SolidColorBrush PendingBorder = new(Color.FromRgb(0xB0, 0xBE, 0xC5));
+    private static readonly SolidColorBrush ActiveBg = new(Color.FromRgb(0xBB, 0xDE, 0xFB));
+    private static readonly SolidColorBrush ActiveBorder = new(Color.FromRgb(0x15, 0x65, 0xC0));
+    private static readonly SolidColorBrush OkBg = new(Color.FromRgb(0xC8, 0xE6, 0xC9));
+    private static readonly SolidColorBrush OkBorder = new(Color.FromRgb(0x2E, 0x7D, 0x32));
+    private static readonly SolidColorBrush FailBg = new(Color.FromRgb(0xFF, 0xCD, 0xD2));
+    private static readonly SolidColorBrush FailBorder = new(Color.FromRgb(0xC6, 0x28, 0x28));
+
+    private Border[] AllDiagramNodes => [NodeLogin, NodeConnState, NodeScan, NodeGetInfo, NodeErrorCheck1, NodeMoveIn, NodeErrorCheck2, NodeMoveOutAndTest, NodeErrorCheck3, NodeEnd];
+
+    private void ResetDiagram()
+    {
+        foreach (var node in AllDiagramNodes) SetNode(node, DiagramNodeState.Pending);
+        NodeEndText.Text = "Nouvelle piece / Erreur";
+    }
+
+    private static void SetNode(Border node, DiagramNodeState state)
+    {
+        (node.Background, node.BorderBrush, node.BorderThickness) = state switch
+        {
+            DiagramNodeState.Active => ((Brush)ActiveBg, (Brush)ActiveBorder, new Thickness(2.5)),
+            DiagramNodeState.Ok => (OkBg, OkBorder, new Thickness(1.5)),
+            DiagramNodeState.Fail => (FailBg, FailBorder, new Thickness(2.5)),
+            _ => (PendingBg, PendingBorder, new Thickness(1)),
+        };
+    }
+
+    /// <summary>
+    /// Invoked (off the UI thread, from within GatewayRunner.Run) right before each MES call.
+    /// Only meant to give live feedback while a call is in flight - the authoritative coloring
+    /// happens afterwards in FinalizeDiagram, once the real per-step outcomes are known.
+    /// </summary>
+    private void HighlightStep(GatewayStep step)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            switch (step)
+            {
+                case GatewayStep.Login:
+                    SetNode(NodeLogin, DiagramNodeState.Active);
+                    SetNode(NodeConnState, DiagramNodeState.Active);
+                    break;
+                case GatewayStep.GetInfo:
+                    SetNode(NodeLogin, DiagramNodeState.Ok);
+                    SetNode(NodeConnState, DiagramNodeState.Ok);
+                    SetNode(NodeScan, DiagramNodeState.Active);
+                    SetNode(NodeGetInfo, DiagramNodeState.Active);
+                    SetNode(NodeErrorCheck1, DiagramNodeState.Active);
+                    break;
+                case GatewayStep.MoveIn:
+                    SetNode(NodeGetInfo, DiagramNodeState.Ok);
+                    SetNode(NodeErrorCheck1, DiagramNodeState.Ok);
+                    SetNode(NodeMoveIn, DiagramNodeState.Active);
+                    SetNode(NodeErrorCheck2, DiagramNodeState.Active);
+                    break;
+                case GatewayStep.MoveOutAndTest:
+                    SetNode(NodeLogin, DiagramNodeState.Ok);
+                    SetNode(NodeConnState, DiagramNodeState.Ok);
+                    SetNode(NodeMoveOutAndTest, DiagramNodeState.Active);
+                    SetNode(NodeErrorCheck3, DiagramNodeState.Active);
+                    break;
+            }
+        });
+    }
+
+    /// <summary>Authoritative, final coloring of every node once the flow (all steps) is known.</summary>
+    private void FinalizeDiagram(FlowResult flow)
+    {
+        ResetDiagram();
+
+        var login = flow.Steps.Count > 0 ? flow.Steps[0] : null;
+        SetNode(NodeLogin, StateFor(login));
+        SetNode(NodeConnState, StateFor(login));
+        if (login is not { Ok: true })
+        {
+            SetNode(NodeEnd, DiagramNodeState.Fail);
+            NodeEndText.Text = "Erreur";
+            return;
+        }
+
+        switch (flow.Action)
+        {
+            case MesAction.Login:
+                SetNode(NodeEnd, DiagramNodeState.Ok);
+                NodeEndText.Text = "Nouvelle piece";
+                break;
+
+            case MesAction.GetInfo:
+            {
+                var info = flow.Steps.Count > 1 ? flow.Steps[1] : null;
+                SetNode(NodeScan, DiagramNodeState.Ok);
+                SetNode(NodeGetInfo, StateFor(info));
+                SetNode(NodeErrorCheck1, StateFor(info));
+                FinishEnd(info);
+                break;
+            }
+
+            case MesAction.MoveIn:
+            {
+                var info = flow.Steps.Count > 1 ? flow.Steps[1] : null;
+                SetNode(NodeScan, DiagramNodeState.Ok);
+                SetNode(NodeGetInfo, StateFor(info));
+                SetNode(NodeErrorCheck1, StateFor(info));
+                if (info is not { Ok: true }) { SetNode(NodeEnd, DiagramNodeState.Fail); NodeEndText.Text = "Erreur"; break; }
+
+                var moveIn = flow.Steps.Count > 2 ? flow.Steps[2] : null;
+                SetNode(NodeMoveIn, StateFor(moveIn));
+                SetNode(NodeErrorCheck2, StateFor(moveIn));
+                FinishEnd(moveIn);
+                break;
+            }
+
+            case MesAction.MoveOutAndTest:
+            {
+                var mot = flow.Steps.Count > 1 ? flow.Steps[1] : null;
+                SetNode(NodeMoveOutAndTest, StateFor(mot));
+                SetNode(NodeErrorCheck3, StateFor(mot));
+                FinishEnd(mot);
+                break;
+            }
+        }
+
+        void FinishEnd(MesResult? r)
+        {
+            SetNode(NodeEnd, r is { Ok: true } ? DiagramNodeState.Ok : DiagramNodeState.Fail);
+            NodeEndText.Text = r is { Ok: true } ? "Nouvelle piece" : "Erreur";
+        }
+    }
+
+    private static DiagramNodeState StateFor(MesResult? r) => r is null ? DiagramNodeState.Pending : (r.Ok ? DiagramNodeState.Ok : DiagramNodeState.Fail);
+
     // ── Affichage du resultat ────────────────────────────────────────────
     private void ShowResult(GatewayMode mode, FlowOutcome outcome)
     {
         var flow = outcome.Flow;
         ResultBanner.Visibility = Visibility.Visible;
+        FinalizeDiagram(flow);
 
         if (flow.Ok)
         {
@@ -234,17 +433,14 @@ public partial class MainWindow : Window
             _ => "Relais: non configure.",
         };
 
+        // The live-streamed text should already match, but the flow's own captured log is
+        // authoritative (e.g. includes trailing lines written right as the process exited).
         var engineLog = string.Join(Environment.NewLine, flow.Steps.Select(s => s.EngineLog).Where(l => !string.IsNullOrEmpty(l)));
         if (!string.IsNullOrEmpty(engineLog))
         {
             EngineLogExpander.Visibility = Visibility.Visible;
-            EngineLogExpander.IsExpanded = !flow.Ok;
             EngineLogText.Text = engineLog;
-        }
-        else
-        {
-            EngineLogExpander.Visibility = Visibility.Collapsed;
-            EngineLogText.Text = string.Empty;
+            EngineLogText.ScrollToEnd();
         }
 
         ResultJsonText.Text = JsonSerializer.Serialize(flow, JsonOptions);
@@ -259,9 +455,10 @@ public partial class MainWindow : Window
         ResultTitleText.Foreground = new SolidColorBrush(Color.FromRgb(0xB7, 0x1C, 0x1C));
         ResultDetailText.Text = message;
         ResultRelayText.Text = string.Empty;
-        EngineLogExpander.Visibility = Visibility.Collapsed;
-        EngineLogText.Text = string.Empty;
         ResultJsonText.Text = string.Empty;
+        ResetDiagram();
+        SetNode(NodeEnd, DiagramNodeState.Fail);
+        NodeEndText.Text = "Erreur";
     }
 
     private static string DecisionMessage(ErrorDecision decision) => decision.Action switch

@@ -21,9 +21,11 @@ public static class GatewayRunner
         string? serialNumber,
         string result,
         string? user,
-        string? password)
+        string? password,
+        Action<GatewayStep>? onStep = null)
     {
         var steps = new List<MesResult>();
+        onStep?.Invoke(GatewayStep.Login);
         var login = mes.Login(station, user, password);
         steps.Add(login);
 
@@ -33,9 +35,9 @@ public static class GatewayRunner
             finalResult = action switch
             {
                 MesAction.Login => login,
-                MesAction.GetInfo => Track(steps, () => mes.GetInfo(station, serialNumber!)),
-                MesAction.MoveIn => RunMoveIn(mes, steps, station, serialNumber!),
-                MesAction.MoveOutAndTest => Track(steps, () => mes.MoveOutAndTest(
+                MesAction.GetInfo => Track(steps, GatewayStep.GetInfo, onStep, () => mes.GetInfo(station, serialNumber!)),
+                MesAction.MoveIn => RunMoveIn(mes, steps, station, serialNumber!, onStep),
+                MesAction.MoveOutAndTest => Track(steps, GatewayStep.MoveOutAndTest, onStep, () => mes.MoveOutAndTest(
                     station, serialNumber!, result, groupId: "", groupVersion: "", layer: 0, checkMultiBoard: false)),
                 _ => throw new InvalidOperationException($"Action non geree: {action}"),
             };
@@ -47,12 +49,15 @@ public static class GatewayRunner
         string? relayNote = null;
         if (relayDriver is not null && relayConfig is not null)
         {
+            onStep?.Invoke(GatewayStep.Relay);
             relay = relayDriver.Trigger(relayConfig, decision);
         }
         else if (relayDriver is not null)
         {
             relayNote = "Aucun relay-config fourni - etape relais ignoree.";
         }
+
+        onStep?.Invoke(GatewayStep.Done);
 
         var overallOk = finalResult.Ok && (relay is null || relay.Ok);
 
@@ -70,19 +75,22 @@ public static class GatewayRunner
         };
     }
 
-    private static MesResult Track(List<MesResult> steps, Func<MesResult> action)
+    private static MesResult Track(List<MesResult> steps, GatewayStep step, Action<GatewayStep>? onStep, Func<MesResult> action)
     {
+        onStep?.Invoke(step);
         var result = action();
         steps.Add(result);
         return result;
     }
 
-    private static MesResult RunMoveIn(IMesClient mes, List<MesResult> steps, string station, string serialNumber)
+    private static MesResult RunMoveIn(IMesClient mes, List<MesResult> steps, string station, string serialNumber, Action<GatewayStep>? onStep)
     {
+        onStep?.Invoke(GatewayStep.GetInfo);
         var info = mes.GetInfo(station, serialNumber);
         steps.Add(info);
         if (!info.Ok) return info;
 
+        onStep?.Invoke(GatewayStep.MoveIn);
         var moveIn = mes.MoveIn(station, serialNumber, activateWorkOrder: true, layer: 0);
         steps.Add(moveIn);
         return moveIn;

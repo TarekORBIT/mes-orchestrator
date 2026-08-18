@@ -75,8 +75,14 @@ La fenêtre s'ouvre directement en **Mode Test** (aucun fichier requis, tout est
    statut métier (ex. `NotLogged`, ErrorCode 3) au lieu de planter — le relais, lui, reste
    toujours désactivé dans ce mode.
 
-   Après exécution, l'expander **"Journal MES_HAI.dll"** affiche le `Log\MES_HAI.log` généré par
-   la DLL pendant cet appel (config trouvée, serveurs CIM essayés, erreurs réseau...).
+   Pendant l'exécution (Test DLL ou Réel), le panneau **"Journal MES_HAI.dll en temps réel"**
+   s'ouvre et se remplit au fur et à mesure — utile pour voir que ça travaille réellement pendant
+   l'attente réseau (jusqu'à ~2 min hors VPN), plutôt que de se demander si l'appli est bloquée.
+   Le **"Diagramme d'exécution"** (juste au-dessus) illustre le protocole Machine ↔ `MES_HAI.dll`
+   (`Login()` → `ConnectionState` → `Scan` → `Serial_GetInformation()` → ... → `Serial_MoveIn()`
+   → ...) et met en surbrillance bleue l'étape en cours, puis colore chaque case en vert (OK) ou
+   rouge (échec) une fois le résultat connu — `Serial_MoveOutAndTestResults()` est marquée à part
+   (barrée) car non couverte par les tests actuels.
 4. Pour la production: cocher **Mode Réel**, renseigner en plus le `relay-config.json`, puis
    exécuter depuis le réseau Visteon avec le relais USB branché — le verdict MES déclenche alors
    réellement le canal pass/fail.

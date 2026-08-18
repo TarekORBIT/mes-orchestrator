@@ -1,7 +1,7 @@
 <Window x:Class="MesRelayGateway.Gui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MES Relay Gateway" Height="820" Width="980" MinHeight="680" MinWidth="820"
+        Title="MES Relay Gateway" Height="900" Width="1040" MinHeight="600" MinWidth="820"
         FontFamily="Segoe UI" FontSize="13">
     <Window.Resources>
         <Style TargetType="Label">
@@ -21,164 +21,239 @@
             <Setter Property="Margin" Value="0,0,0,10"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
+        <!-- Base look for a diagram node; state colors (Pending/Active/Ok/Fail) are applied in code-behind. -->
+        <Style TargetType="Border" x:Key="DiagramNodeStyle">
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="MinWidth" Value="520"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,2"/>
+        </Style>
+        <Style TargetType="TextBlock" x:Key="DiagramArrowStyle">
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="#999999"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,-2"/>
+        </Style>
     </Window.Resources>
 
-    <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="12">
 
-        <!-- ── Mode Test / Test DLL / Reel ──────────────────────────────── -->
-        <Border Grid.Row="0" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,10" Background="#F5F5F5">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Mode :" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                    <RadioButton x:Name="ModeMockRadio" GroupName="Mode" Content="Mode Test (simulation, sans DLL ni reseau)" IsChecked="True" VerticalAlignment="Center" Checked="OnModeChanged"/>
-                    <RadioButton x:Name="ModeDllTestRadio" GroupName="Mode" Content="Mode Test DLL (MES_HAI.dll reelle, sans relais, sans reseau requis)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged"/>
-                    <RadioButton x:Name="ModeRealRadio" GroupName="Mode" Content="Mode Reel (production: DLL + relais)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged"/>
+            <!-- ── Mode Test / Test DLL / Reel ──────────────────────────────── -->
+            <Border BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,10" Background="#F5F5F5">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Mode :" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <RadioButton x:Name="ModeMockRadio" GroupName="Mode" Content="Mode Test (simulation, sans DLL ni reseau)" IsChecked="True" VerticalAlignment="Center" Checked="OnModeChanged"/>
+                        <RadioButton x:Name="ModeDllTestRadio" GroupName="Mode" Content="Mode Test DLL (MES_HAI.dll reelle, sans relais, sans reseau requis)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged"/>
+                        <RadioButton x:Name="ModeRealRadio" GroupName="Mode" Content="Mode Reel (production: DLL + relais, adresses IP de MES_HAI.xml)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged"/>
+                    </StackPanel>
+                    <TextBlock x:Name="ModeHintText" Margin="0,6,0,0" VerticalAlignment="Center" Foreground="#555555" FontStyle="Italic" TextWrapping="Wrap"
+                               Text="Aucun fichier requis : donnees et relais simules."/>
                 </StackPanel>
-                <TextBlock x:Name="ModeHintText" Margin="0,6,0,0" VerticalAlignment="Center" Foreground="#555555" FontStyle="Italic" TextWrapping="Wrap"
-                           Text="Aucun fichier requis : donnees et relais simules."/>
-            </StackPanel>
-        </Border>
+            </Border>
 
-        <!-- ── Configuration ────────────────────────────────────────────── -->
-        <GroupBox Grid.Row="1" Header="Configuration">
-            <StackPanel>
-                <Grid Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Button Grid.Column="0" Content="Charger client-config.json..." Click="OnLoadConfigClick"/>
-                    <TextBlock Grid.Column="1" x:Name="ConfigPathText" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#666666"
-                               Text="(aucun fichier charge - valeurs par defaut ci-dessous)"/>
-                </Grid>
+            <!-- ── Configuration ────────────────────────────────────────────── -->
+            <GroupBox Header="Configuration">
+                <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="Charger client-config.json..." Click="OnLoadConfigClick"/>
+                        <TextBlock Grid.Column="1" x:Name="ConfigPathText" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#666666"
+                                   Text="(aucun fichier charge - valeurs par defaut ci-dessous)"/>
+                    </Grid>
 
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="130"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Label Grid.Row="0" Grid.Column="0" Content="Station"/>
+                        <TextBox Grid.Row="0" Grid.Column="1" x:Name="StationTextBox" Margin="0,3"/>
+
+                        <Label Grid.Row="1" Grid.Column="0" Content="MES_HAI.xml"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="XmlPathTextBox" Margin="0,3"
+                                 Text="C:\ProgramData\MESApps\CIM\MES_HAI.xml"/>
+                        <Button Grid.Row="1" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseXmlClick"/>
+
+                        <Label Grid.Row="2" Grid.Column="0" Content="MES_HAI.dll"/>
+                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="DllPathTextBox" Margin="0,3"
+                                 Text="C:\MESApps\ClientGateway\bridge\MES_HAI.dll"/>
+                        <Button Grid.Row="2" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseDllClick"/>
+
+                        <Label Grid.Row="3" Grid.Column="0" Content="MesHaiBridge.exe"/>
+                        <TextBox Grid.Row="3" Grid.Column="1" x:Name="BridgeExePathTextBox" Margin="0,3"
+                                 Text="C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe"/>
+                        <Button Grid.Row="3" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseBridgeExeClick"/>
+
+                        <Label Grid.Row="4" Grid.Column="0" Content="relay-config.json"/>
+                        <TextBox Grid.Row="4" Grid.Column="1" x:Name="RelayConfigPathTextBox" Margin="0,3"
+                                 Text="C:\MESApps\ClientGateway\relay-gateway\config\relay-config.json"/>
+                        <Button Grid.Row="4" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseRelayConfigClick"/>
+
+                        <Label Grid.Row="5" Grid.Column="0" Content="Instance HAI"/>
+                        <TextBox Grid.Row="5" Grid.Column="1" x:Name="HaiInstanceTextBox" Margin="0,3" Text="MES_HAI"/>
+                    </Grid>
+                    <TextBlock Margin="0,4,0,0" Foreground="#666666" FontStyle="Italic" TextWrapping="Wrap"
+                               Text="En Mode Test DLL / Reel, si MesHaiBridge.exe existe au chemin ci-dessus, MES_HAI.dll est appelee via ce bridge (comme l'orchestrateur Node) ; sinon appel direct en process."/>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- ── Action ───────────────────────────────────────────────────── -->
+            <GroupBox Header="Action">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="200"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="120"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
 
-                    <Label Grid.Row="0" Grid.Column="0" Content="Station"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="StationTextBox" Margin="0,3"/>
+                    <Label Grid.Column="0" Content="Action"/>
+                    <ComboBox Grid.Column="1" x:Name="ActionComboBox" SelectedIndex="2" SelectionChanged="OnActionChanged">
+                        <ComboBoxItem Content="Login"/>
+                        <ComboBoxItem Content="Get Info"/>
+                        <ComboBoxItem Content="Move In"/>
+                        <ComboBoxItem Content="Move Out + Test"/>
+                    </ComboBox>
 
-                    <Label Grid.Row="1" Grid.Column="0" Content="MES_HAI.xml"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="XmlPathTextBox" Margin="0,3"
-                             Text="C:\ProgramData\MESApps\CIM\MES_HAI.xml"/>
-                    <Button Grid.Row="1" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseXmlClick"/>
+                    <Label Grid.Column="2" Content="Numero de serie" Margin="16,4,8,4"/>
+                    <TextBox Grid.Column="3" x:Name="SerialTextBox" Text="SN001"/>
 
-                    <Label Grid.Row="2" Grid.Column="0" Content="MES_HAI.dll"/>
-                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="DllPathTextBox" Margin="0,3"
-                             Text="C:\MESApps\ClientGateway\bridge\MES_HAI.dll"/>
-                    <Button Grid.Row="2" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseDllClick"/>
+                    <Label Grid.Column="4" x:Name="ResultLabel" Content="Resultat" Margin="16,4,8,4"/>
+                    <ComboBox Grid.Column="5" x:Name="ResultComboBox" SelectedIndex="0">
+                        <ComboBoxItem Content="Pass"/>
+                        <ComboBoxItem Content="Fail"/>
+                    </ComboBox>
 
-                    <Label Grid.Row="3" Grid.Column="0" Content="MesHaiBridge.exe"/>
-                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="BridgeExePathTextBox" Margin="0,3"
-                             Text="C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe"/>
-                    <Button Grid.Row="3" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseBridgeExeClick"/>
-
-                    <Label Grid.Row="4" Grid.Column="0" Content="relay-config.json"/>
-                    <TextBox Grid.Row="4" Grid.Column="1" x:Name="RelayConfigPathTextBox" Margin="0,3"
-                             Text="C:\MESApps\ClientGateway\relay-gateway\config\relay-config.json"/>
-                    <Button Grid.Row="4" Grid.Column="2" Content="Parcourir..." Style="{StaticResource SecondaryButton}" Click="OnBrowseRelayConfigClick"/>
-
-                    <Label Grid.Row="5" Grid.Column="0" Content="Instance HAI"/>
-                    <TextBox Grid.Row="5" Grid.Column="1" x:Name="HaiInstanceTextBox" Margin="0,3" Text="MES_HAI"/>
+                    <Button Grid.Column="7" x:Name="ExecuteButton" Content="Executer" Padding="24,6" FontWeight="Bold"
+                            Background="#2E7D32" Foreground="White" Click="OnExecuteClick"/>
                 </Grid>
-                <TextBlock Margin="0,4,0,0" Foreground="#666666" FontStyle="Italic" TextWrapping="Wrap"
-                           Text="En Mode Reel, si MesHaiBridge.exe existe au chemin ci-dessus, MES_HAI.dll est appelee via ce bridge (comme l'orchestrateur Node) ; sinon appel direct en process."/>
-            </StackPanel>
-        </GroupBox>
+            </GroupBox>
 
-        <!-- ── Action ───────────────────────────────────────────────────── -->
-        <GroupBox Grid.Row="2" Header="Action">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="200"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="140"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="120"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+            <!-- ── Diagramme d'execution (Machine / MES_HAI.dll) ───────────────── -->
+            <GroupBox Header="Diagramme d'execution">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <Border Width="14" Height="14" Background="#ECEFF1" BorderBrush="#B0BEC5" BorderThickness="1" Margin="0,0,4,0"/>
+                        <TextBlock Text="En attente" Margin="0,0,14,0" Foreground="#666"/>
+                        <Border Width="14" Height="14" Background="#BBDEFB" BorderBrush="#1565C0" BorderThickness="2" Margin="0,0,4,0"/>
+                        <TextBlock Text="En cours" Margin="0,0,14,0" Foreground="#666"/>
+                        <Border Width="14" Height="14" Background="#C8E6C9" BorderBrush="#2E7D32" BorderThickness="1" Margin="0,0,4,0"/>
+                        <TextBlock Text="OK" Margin="0,0,14,0" Foreground="#666"/>
+                        <Border Width="14" Height="14" Background="#FFCDD2" BorderBrush="#C62828" BorderThickness="1" Margin="0,0,4,0"/>
+                        <TextBlock Text="Echec" Foreground="#666"/>
+                    </StackPanel>
 
-                <Label Grid.Column="0" Content="Action"/>
-                <ComboBox Grid.Column="1" x:Name="ActionComboBox" SelectedIndex="2" SelectionChanged="OnActionChanged">
-                    <ComboBoxItem Content="Login"/>
-                    <ComboBoxItem Content="Get Info"/>
-                    <ComboBoxItem Content="Move In"/>
-                    <ComboBoxItem Content="Move Out + Test"/>
-                </ComboBox>
+                    <Border x:Name="NodeLogin" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="MES_HAI.dll" FontWeight="Bold" FontSize="10" Foreground="#5E35B1"/><LineBreak/><Run Text="Login(station)"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeConnState" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#F9A825"/><LineBreak/><Run Text="ConnectionState = Logged ?"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeScan" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#1E88E5"/><LineBreak/><Run Text="Scan numero de serie"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeGetInfo" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="MES_HAI.dll" FontWeight="Bold" FontSize="10" Foreground="#5E35B1"/><LineBreak/><Run Text="Serial_GetInformation(station, serialNumber)"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeErrorCheck1" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#F9A825"/><LineBreak/><Run Text="ErrorCode == 0 ?"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodePartNumber" Style="{StaticResource DiagramNodeStyle}" Opacity="0.6">
+                        <TextBlock TextAlignment="Center" FontStyle="Italic"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#9E9E9E"/><LineBreak/><Run Text="PartNumber attendu == SerialInfo.PartNumber ? (non verifie par cet outil generique)"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeMoveIn" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="MES_HAI.dll" FontWeight="Bold" FontSize="10" Foreground="#5E35B1"/><LineBreak/><Run Text="Serial_MoveIn(station, serialNumber, activateWorkOrder, layer)"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeErrorCheck2" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#F9A825"/><LineBreak/><Run Text="ErrorCode == 0 ?"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeMoveOutAndTest" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center">
+                            <Run Text="MES_HAI.dll" FontWeight="Bold" FontSize="10" Foreground="#5E35B1"/><LineBreak/>
+                            <Run Text="Serial_MoveOutAndTestResults(...)" TextDecorations="Strikethrough"/><LineBreak/>
+                            <Run Text="(non couvert par les tests actuels)" FontSize="10" Foreground="#C62828" FontStyle="Italic"/>
+                        </TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeErrorCheck3" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#F9A825"/><LineBreak/><Run Text="ErrorCode == 0 ?"/></TextBlock>
+                    </Border>
+                    <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
+                    <Border x:Name="NodeEnd" Style="{StaticResource DiagramNodeStyle}" CornerRadius="16">
+                        <TextBlock x:Name="NodeEndText" TextAlignment="Center" FontWeight="Bold" Text="Nouvelle piece / Erreur"/>
+                    </Border>
+                </StackPanel>
+            </GroupBox>
 
-                <Label Grid.Column="2" Content="Numero de serie" Margin="16,4,8,4"/>
-                <TextBox Grid.Column="3" x:Name="SerialTextBox" Text="SN001"/>
+            <!-- ── Journal temps reel ──────────────────────────────────────────── -->
+            <Expander x:Name="EngineLogExpander" Header="Journal MES_HAI.dll en temps reel (Log\MES_HAI.log)" Margin="0,0,0,10" Visibility="Collapsed">
+                <TextBox x:Name="EngineLogText" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Height="320" Margin="0,6,0,0"/>
+            </Expander>
 
-                <Label Grid.Column="4" x:Name="ResultLabel" Content="Resultat" Margin="16,4,8,4"/>
-                <ComboBox Grid.Column="5" x:Name="ResultComboBox" SelectedIndex="0">
-                    <ComboBoxItem Content="Pass"/>
-                    <ComboBoxItem Content="Fail"/>
-                </ComboBox>
+            <!-- ── Resultat ─────────────────────────────────────────────────── -->
+            <Border x:Name="ResultBanner" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,10"
+                    Background="#EEEEEE" BorderBrush="#CCCCCC" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock x:Name="ResultTitleText" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock x:Name="ResultDetailText" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    <TextBlock x:Name="ResultRelayText" TextWrapping="Wrap" Margin="0,4,0,0" FontStyle="Italic"/>
+                    <Expander Header="Details techniques (JSON)" Margin="0,8,0,0">
+                        <TextBox x:Name="ResultJsonText" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="NoWrap" FontFamily="Consolas"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="220" Margin="0,6,0,0"/>
+                    </Expander>
+                </StackPanel>
+            </Border>
 
-                <Button Grid.Column="7" x:Name="ExecuteButton" Content="Executer" Padding="24,6" FontWeight="Bold"
-                        Background="#2E7D32" Foreground="White" Click="OnExecuteClick"/>
-            </Grid>
-        </GroupBox>
+            <!-- ── Historique ───────────────────────────────────────────────── -->
+            <GroupBox Header="Historique">
+                <ListView x:Name="HistoryListView" Height="220">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Heure" Width="90" DisplayMemberBinding="{Binding Time}"/>
+                            <GridViewColumn Header="Mode" Width="60" DisplayMemberBinding="{Binding Mode}"/>
+                            <GridViewColumn Header="Action" Width="120" DisplayMemberBinding="{Binding Action}"/>
+                            <GridViewColumn Header="Station" Width="110" DisplayMemberBinding="{Binding Station}"/>
+                            <GridViewColumn Header="Serie" Width="100" DisplayMemberBinding="{Binding Serial}"/>
+                            <GridViewColumn Header="Resultat" Width="90" DisplayMemberBinding="{Binding Result}"/>
+                            <GridViewColumn Header="Relais" Width="90" DisplayMemberBinding="{Binding Relay}"/>
+                            <GridViewColumn Header="Detail" Width="280" DisplayMemberBinding="{Binding Detail}"/>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </GroupBox>
 
-        <!-- ── Resultat ─────────────────────────────────────────────────── -->
-        <Border Grid.Row="3" x:Name="ResultBanner" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,10"
-                Background="#EEEEEE" BorderBrush="#CCCCCC" Visibility="Collapsed">
-            <StackPanel>
-                <TextBlock x:Name="ResultTitleText" FontSize="18" FontWeight="Bold"/>
-                <TextBlock x:Name="ResultDetailText" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                <TextBlock x:Name="ResultRelayText" TextWrapping="Wrap" Margin="0,4,0,0" FontStyle="Italic"/>
-                <Expander x:Name="EngineLogExpander" Header="Journal MES_HAI.dll (Log\MES_HAI.log)" Margin="0,8,0,0" Visibility="Collapsed">
-                    <TextBox x:Name="EngineLogText" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="NoWrap" FontFamily="Consolas" FontSize="11"
-                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="320" Height="320" Margin="0,6,0,0"/>
-                </Expander>
-                <Expander Header="Details techniques (JSON)" Margin="0,8,0,0">
-                    <TextBox x:Name="ResultJsonText" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="NoWrap" FontFamily="Consolas"
-                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" MaxHeight="220" Margin="0,6,0,0"/>
-                </Expander>
-            </StackPanel>
-        </Border>
-
-        <!-- ── Historique ───────────────────────────────────────────────── -->
-        <GroupBox Grid.Row="4" Header="Historique">
-            <ListView x:Name="HistoryListView">
-                <ListView.View>
-                    <GridView>
-                        <GridViewColumn Header="Heure" Width="90" DisplayMemberBinding="{Binding Time}"/>
-                        <GridViewColumn Header="Mode" Width="60" DisplayMemberBinding="{Binding Mode}"/>
-                        <GridViewColumn Header="Action" Width="120" DisplayMemberBinding="{Binding Action}"/>
-                        <GridViewColumn Header="Station" Width="110" DisplayMemberBinding="{Binding Station}"/>
-                        <GridViewColumn Header="Serie" Width="100" DisplayMemberBinding="{Binding Serial}"/>
-                        <GridViewColumn Header="Resultat" Width="90" DisplayMemberBinding="{Binding Result}"/>
-                        <GridViewColumn Header="Relais" Width="90" DisplayMemberBinding="{Binding Relay}"/>
-                        <GridViewColumn Header="Detail" Width="280" DisplayMemberBinding="{Binding Detail}"/>
-                    </GridView>
-                </ListView.View>
-            </ListView>
-        </GroupBox>
-
-        <!-- ── Barre de statut ──────────────────────────────────────────── -->
-        <TextBlock Grid.Row="5" x:Name="StatusText" Margin="0,8,0,0" Foreground="#666666" Text="Pret."/>
-    </Grid>
+            <!-- ── Barre de statut ──────────────────────────────────────────── -->
+            <TextBlock x:Name="StatusText" Margin="0,8,0,0" Foreground="#666666" Text="Pret."/>
+        </StackPanel>
+    </ScrollViewer>
 </Window>
