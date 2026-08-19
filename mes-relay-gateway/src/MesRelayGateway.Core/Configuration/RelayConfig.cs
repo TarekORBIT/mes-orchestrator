@@ -4,7 +4,9 @@ using System.Text.Json.Serialization;
 namespace MesRelayGateway.Configuration;
 
 /// <summary>
-/// Maps a MES verdict to a physical USB relay channel. File pointed to by --relay-config.
+/// Maps MES ErrorCode values to physical USB relay channels. File pointed to by
+/// --relay-config. Rules are evaluated in order: the first non-wildcard rule that matches
+/// the ErrorCode wins; a "*" rule (if present) is only used when nothing more specific matched.
 /// </summary>
 public sealed class RelayConfig
 {
@@ -12,17 +14,25 @@ public sealed class RelayConfig
     [JsonPropertyName("relaySerialNumber")]
     public string? RelaySerialNumber { get; set; }
 
-    /// <summary>Channel triggered when the MES flow ends with ErrorCode 0 (pass).</summary>
+    [JsonPropertyName("rules")]
+    public List<RelayRule> Rules { get; set; } = [];
+
+    // Legacy shape (passChannel/failChannel/pulseMs), kept only so older relay-config.json
+    // files still load - Load() converts them into two Rules the first time it reads one.
     [JsonPropertyName("passChannel")]
-    public int PassChannel { get; set; } = 1;
+    public int? PassChannel { get; set; }
 
-    /// <summary>Channel triggered when the MES flow reports any error (block/reject).</summary>
     [JsonPropertyName("failChannel")]
-    public int FailChannel { get; set; } = 2;
+    public int? FailChannel { get; set; }
 
-    /// <summary>How long the channel stays energized before being released, in ms.</summary>
     [JsonPropertyName("pulseMs")]
-    public int PulseMs { get; set; } = 500;
+    public int? PulseMs { get; set; }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     public static RelayConfig Load(string path)
     {
@@ -32,11 +42,38 @@ public sealed class RelayConfig
         }
 
         var json = File.ReadAllText(path);
-        var config = JsonSerializer.Deserialize<RelayConfig>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-        });
+        var config = JsonSerializer.Deserialize<RelayConfig>(json, JsonOptions)
+            ?? throw new InvalidDataException($"Fichier de configuration relais invalide: {path}");
 
-        return config ?? throw new InvalidDataException($"Fichier de configuration relais invalide: {path}");
+        if (config.Rules.Count == 0 && (config.PassChannel.HasValue || config.FailChannel.HasValue))
+        {
+            var pulseMs = config.PulseMs ?? 500;
+            config.Rules.Add(new RelayRule { ErrorCodes = "0", Channel = config.PassChannel ?? 1, Mode = RelayMode.Pulse, PulseMs = pulseMs });
+            config.Rules.Add(new RelayRule { ErrorCodes = "*", Channel = config.FailChannel ?? 2, Mode = RelayMode.Pulse, PulseMs = pulseMs });
+        }
+
+        return config;
+    }
+
+    public void Save(string path)
+    {
+        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Converters = { new JsonStringEnumConverter() },
+            DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        });
+        File.WriteAllText(path, json);
+    }
+
+    /// <summary>First specific (non-wildcard) rule matching errorCode, else the wildcard rule, else null.</summary>
+    public RelayRule? FindMatch(int? errorCode)
+    {
+        foreach (var rule in Rules)
+        {
+            if (!rule.IsWildcard && rule.Matches(errorCode)) return rule;
+        }
+
+        return Rules.FirstOrDefault(r => r.IsWildcard);
     }
 }

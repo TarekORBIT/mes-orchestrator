@@ -1,5 +1,4 @@
 using MesRelayGateway.Configuration;
-using MesRelayGateway.Mes;
 
 namespace MesRelayGateway.Relay;
 
@@ -10,5 +9,9 @@ namespace MesRelayGateway.Relay;
 /// </summary>
 public interface IRelayDriver
 {
-    RelayTriggerResult Trigger(RelayConfig config, ErrorDecision decision);
+    /// <summary>
+    /// Finds the RelayRule in config matching errorCode and applies it (pulse or latch).
+    /// Returns Ok=false with no channel driven if no rule matches.
+    /// </summary>
+    RelayTriggerResult Trigger(RelayConfig config, int? errorCode);
 }

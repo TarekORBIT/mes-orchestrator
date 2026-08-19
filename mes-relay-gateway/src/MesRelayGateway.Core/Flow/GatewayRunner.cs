@@ -50,7 +50,7 @@ public static class GatewayRunner
         if (relayDriver is not null && relayConfig is not null)
         {
             onStep?.Invoke(GatewayStep.Relay);
-            relay = relayDriver.Trigger(relayConfig, decision);
+            relay = relayDriver.Trigger(relayConfig, finalResult.ErrorCode);
         }
         else if (relayDriver is not null)
         {

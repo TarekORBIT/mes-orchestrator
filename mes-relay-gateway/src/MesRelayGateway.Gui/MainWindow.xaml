@@ -114,6 +114,59 @@
                 </StackPanel>
             </GroupBox>
 
+            <!-- ── Relais USB : detection, forcage manuel, regles de declenchement ──── -->
+            <GroupBox Header="Relais USB — Configuration et test">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button Content="Detecter les cartes relais" Click="OnDetectRelaysClick"/>
+                        <TextBlock x:Name="RelayDetectResultText" Margin="10,0,0,0" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" Foreground="#555555" Text="(non detecte)"/>
+                    </StackPanel>
+
+                    <Border BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="Forcage manuel (independant des regles ci-dessous)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Label Content="N° serie carte (optionnel)"/>
+                                <TextBox x:Name="RelayBoardSerialTextBox" Width="140"/>
+                                <Label Content="Canal" Margin="16,0,0,0"/>
+                                <TextBox x:Name="ManualChannelTextBox" Width="50" Text="1"/>
+                                <Label Content="Impulsion (ms)" Margin="16,0,0,0"/>
+                                <TextBox x:Name="ManualPulseMsTextBox" Width="70" Text="3000"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="Forcer ON (maintenu)" Click="OnForceOnClick"/>
+                                <Button Content="Impulsion" Margin="6,0,0,0" Click="OnForcePulseClick"/>
+                                <Button Content="Forcer OFF / Reset" Margin="6,0,0,0" Background="#C62828" Foreground="White" Click="OnForceOffClick"/>
+                                <Button Content="Tout eteindre" Margin="6,0,0,0" Click="OnForceAllOffClick"/>
+                                <Button Content="Lire l'etat" Margin="6,0,0,0" Click="OnReadStatusClick"/>
+                            </StackPanel>
+                            <TextBlock x:Name="ManualForceResultText" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="#555555"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Regles de declenchement automatique (utilisees en Mode Reel selon l'ErrorCode MES)"
+                               FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <DataGrid x:Name="RelayRulesGrid" AutoGenerateColumns="False" CanUserAddRows="False" Height="140" Margin="0,0,0,6">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="ErrorCode(s) (ex: 0 / 1,2 / *)" Binding="{Binding ErrorCodes, UpdateSourceTrigger=PropertyChanged}" Width="180"/>
+                            <DataGridTextColumn Header="Canal" Binding="{Binding Channel, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                            <DataGridTextColumn Header="Mode (Pulse/Latch)" Binding="{Binding Mode, UpdateSourceTrigger=PropertyChanged}" Width="140"/>
+                            <DataGridTextColumn Header="Impulsion (ms, si Pulse)" Binding="{Binding PulseMs, UpdateSourceTrigger=PropertyChanged}" Width="150"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Ajouter une regle" Click="OnAddRuleClick"/>
+                        <Button Content="Supprimer la regle selectionnee" Margin="8,0,0,0" Click="OnRemoveRuleClick"/>
+                        <Button Content="Charger depuis relay-config.json" Margin="8,0,0,0" Click="OnLoadRulesClick"/>
+                        <Button Content="Enregistrer dans relay-config.json" Margin="8,0,0,0" Background="#2E7D32" Foreground="White" Click="OnSaveRulesClick"/>
+                    </StackPanel>
+                    <TextBlock x:Name="RelayRulesStatusText" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="#555555"/>
+                    <TextBlock Margin="0,4,0,0" Foreground="#666666" FontStyle="Italic" TextWrapping="Wrap"
+                               Text="Regle = quand l'ErrorCode MES correspond, le canal indique est declenche. Mode Pulse = impulsion puis relachement automatique. Mode Latch = reste ON jusqu'a un forcage OFF/Reset manuel ci-dessus. La premiere regle specifique qui correspond gagne ; '*' sert de secours."/>
+                </StackPanel>
+            </GroupBox>
+
             <!-- ── Action ───────────────────────────────────────────────────── -->
             <GroupBox Header="Action">
                 <Grid>

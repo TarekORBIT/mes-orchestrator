@@ -16,6 +16,7 @@ namespace MesRelayGateway.Gui;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<HistoryEntry> _history = new();
+    private readonly ObservableCollection<RelayRuleRow> _relayRules = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private DispatcherTimer? _liveLogTimer;
@@ -26,6 +27,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         HistoryListView.ItemsSource = _history;
+        RelayRulesGrid.ItemsSource = _relayRules;
+        _relayRules.Add(new RelayRuleRow { ErrorCodes = "0", Channel = "1", Mode = "Pulse", PulseMs = "3000" });
+        _relayRules.Add(new RelayRuleRow { ErrorCodes = "*", Channel = "2", Mode = "Pulse", PulseMs = "3000" });
         ResetDiagram();
     }
 
@@ -86,6 +90,180 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog(this) == true)
         {
             target.Text = dialog.FileName;
+        }
+    }
+
+    // ── Relais USB : detection ──────────────────────────────────────────
+    private async void OnDetectRelaysClick(object sender, RoutedEventArgs e)
+    {
+        RelayDetectResultText.Text = "Detection en cours...";
+        try
+        {
+            var devices = await Task.Run(UsbRelayController.ListDevices);
+            RelayDetectResultText.Text = devices.Count == 0
+                ? "Aucune carte detectee."
+                : string.Join("  |  ", devices.Select(d => $"{d.SerialNumber} ({d.ChannelCount} canaux)"));
+        }
+        catch (Exception ex)
+        {
+            RelayDetectResultText.Text = $"Echec: {ex.Message}";
+        }
+    }
+
+    // ── Relais USB : forcage manuel ──────────────────────────────────────
+    private string? ManualBoardSerial => string.IsNullOrWhiteSpace(RelayBoardSerialTextBox.Text) ? null : RelayBoardSerialTextBox.Text.Trim();
+
+    private bool TryGetManualChannel(out int channel)
+    {
+        if (int.TryParse(ManualChannelTextBox.Text.Trim(), out channel) && channel >= 1) return true;
+        ManualForceResultText.Text = "Canal invalide (entier >= 1 attendu).";
+        return false;
+    }
+
+    private async void OnForceOnClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetManualChannel(out var channel)) return;
+        await RunManualRelayAction(
+            () => { using var relay = UsbRelayController.Open(ManualBoardSerial); relay.OpenChannel(channel); },
+            $"Canal {channel} force ON (maintenu jusqu'a reset).");
+    }
+
+    private async void OnForcePulseClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetManualChannel(out var channel)) return;
+        if (!int.TryParse(ManualPulseMsTextBox.Text.Trim(), out var pulseMs) || pulseMs < 0)
+        {
+            ManualForceResultText.Text = "Duree d'impulsion invalide.";
+            return;
+        }
+        await RunManualRelayAction(
+            () => { using var relay = UsbRelayController.Open(ManualBoardSerial); relay.PulseChannel(channel, pulseMs); },
+            $"Impulsion de {pulseMs}ms envoyee sur le canal {channel}.");
+    }
+
+    private async void OnForceOffClick(object sender, RoutedEventArgs e)
+    {
+        if (!TryGetManualChannel(out var channel)) return;
+        await RunManualRelayAction(
+            () => { using var relay = UsbRelayController.Open(ManualBoardSerial); relay.CloseChannel(channel); },
+            $"Canal {channel} force OFF (reset).");
+    }
+
+    private async void OnForceAllOffClick(object sender, RoutedEventArgs e)
+    {
+        await RunManualRelayAction(
+            () => { using var relay = UsbRelayController.Open(ManualBoardSerial); relay.CloseAllChannels(); },
+            "Tous les canaux ont ete forces OFF.");
+    }
+
+    private async void OnReadStatusClick(object sender, RoutedEventArgs e)
+    {
+        await RunManualRelayAction(
+            () =>
+            {
+                using var relay = UsbRelayController.Open(ManualBoardSerial);
+                var bitmap = relay.GetStatusBitmap();
+                var onChannels = Enumerable.Range(1, relay.ChannelCount).Where(c => (bitmap & (1 << (c - 1))) != 0).ToList();
+                ManualForceResultText.Text = onChannels.Count == 0
+                    ? $"Carte {relay.SerialNumber}: tous les canaux sont OFF."
+                    : $"Carte {relay.SerialNumber}: canaux ON = {string.Join(", ", onChannels)}.";
+            },
+            successMessage: null);
+    }
+
+    private async Task RunManualRelayAction(Action action, string? successMessage)
+    {
+        ManualForceResultText.Text = "En cours...";
+        try
+        {
+            await Task.Run(action);
+            if (successMessage is not null) ManualForceResultText.Text = successMessage;
+        }
+        catch (Exception ex)
+        {
+            ManualForceResultText.Text = $"Echec: {ex.Message}";
+        }
+    }
+
+    // ── Relais USB : regles de declenchement ─────────────────────────────
+    private void OnAddRuleClick(object sender, RoutedEventArgs e)
+    {
+        _relayRules.Add(new RelayRuleRow { ErrorCodes = "*", Channel = "1", Mode = "Pulse", PulseMs = "3000" });
+    }
+
+    private void OnRemoveRuleClick(object sender, RoutedEventArgs e)
+    {
+        if (RelayRulesGrid.SelectedItem is RelayRuleRow row) _relayRules.Remove(row);
+    }
+
+    private void OnLoadRulesClick(object sender, RoutedEventArgs e)
+    {
+        var path = RelayConfigPathTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            RelayRulesStatusText.Text = $"Fichier introuvable: {path}";
+            return;
+        }
+
+        try
+        {
+            var config = RelayConfig.Load(path);
+            _relayRules.Clear();
+            foreach (var r in config.Rules)
+            {
+                _relayRules.Add(new RelayRuleRow { ErrorCodes = r.ErrorCodes, Channel = r.Channel.ToString(), Mode = r.Mode.ToString(), PulseMs = r.PulseMs.ToString() });
+            }
+            RelayBoardSerialTextBox.Text = config.RelaySerialNumber ?? string.Empty;
+            RelayRulesStatusText.Text = $"{config.Rules.Count} regle(s) chargee(s) depuis {path}";
+        }
+        catch (Exception ex)
+        {
+            RelayRulesStatusText.Text = $"Erreur de chargement: {ex.Message}";
+        }
+    }
+
+    private void OnSaveRulesClick(object sender, RoutedEventArgs e)
+    {
+        var path = RelayConfigPathTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            RelayRulesStatusText.Text = "Chemin relay-config.json vide (voir champ Configuration).";
+            return;
+        }
+
+        var config = new RelayConfig { RelaySerialNumber = ManualBoardSerial };
+        foreach (var row in _relayRules)
+        {
+            if (!int.TryParse(row.Channel.Trim(), out var channel))
+            {
+                RelayRulesStatusText.Text = $"Canal invalide pour la regle '{row.ErrorCodes}'.";
+                return;
+            }
+            if (!Enum.TryParse<RelayMode>(row.Mode.Trim(), ignoreCase: true, out var mode))
+            {
+                RelayRulesStatusText.Text = $"Mode invalide pour la regle '{row.ErrorCodes}' (Pulse ou Latch attendu).";
+                return;
+            }
+            var pulseMs = 3000;
+            if (mode == RelayMode.Pulse && !int.TryParse(row.PulseMs.Trim(), out pulseMs))
+            {
+                RelayRulesStatusText.Text = $"Duree d'impulsion invalide pour la regle '{row.ErrorCodes}'.";
+                return;
+            }
+
+            config.Rules.Add(new RelayRule { ErrorCodes = row.ErrorCodes.Trim(), Channel = channel, Mode = mode, PulseMs = pulseMs });
+        }
+
+        try
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            config.Save(path);
+            RelayRulesStatusText.Text = $"{config.Rules.Count} regle(s) enregistree(s) dans {path}";
+        }
+        catch (Exception ex)
+        {
+            RelayRulesStatusText.Text = $"Erreur d'enregistrement: {ex.Message}";
         }
     }
 
@@ -451,8 +629,8 @@ public partial class MainWindow : Window
 
         var relayLine = flow.Relay switch
         {
-            { } r when r.Ok => $"Relais: canal {r.Channel} declenche ({r.Verdict}), carte {r.BoardSerialNumber}{(r.Simulated ? " [simule]" : "")}.",
-            { } r => $"Relais: ECHEC canal {r.Channel} ({r.Verdict}) - {r.Error}",
+            { } r when r.Ok => $"Relais: {r.RuleDescription ?? $"canal {r.Channel}"}{(r.Latched ? " [maintenu ON]" : "")}, carte {r.BoardSerialNumber}{(r.Simulated ? " [simule]" : "")}.",
+            { } r => $"Relais: ECHEC ({r.RuleDescription ?? $"canal {r.Channel}"}) - {r.Error}",
             null when flow.RelayNote is not null => flow.RelayNote,
             null when mode == GatewayMode.DllTest => "Relais: volontairement desactive en Mode Test DLL.",
             _ => "Relais: non configure.",
@@ -515,7 +693,7 @@ public partial class MainWindow : Window
             Station = station,
             Serial = string.IsNullOrWhiteSpace(serial) ? "-" : serial,
             Result = flow is null ? "ERREUR" : (flow.Ok ? "OK" : "ECHEC"),
-            Relay = flow?.Relay is null ? "-" : $"canal {flow.Relay.Channel} ({flow.Relay.Verdict})",
+            Relay = flow?.Relay is null ? "-" : $"canal {flow.Relay.Channel}{(flow.Relay.Latched ? " [ON]" : "")}",
             Detail = error ?? flow?.FinalResult.ErrorDescription,
         });
     }

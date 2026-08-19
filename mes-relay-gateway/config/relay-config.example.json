@@ -1,6 +1,8 @@
 {
   "relaySerialNumber": null,
-  "passChannel": 1,
-  "failChannel": 2,
-  "pulseMs": 500
+  "rules": [
+    { "errorCodes": "0", "channel": 1, "mode": "Pulse", "pulseMs": 3000 },
+    { "errorCodes": "3", "channel": 3, "mode": "Latch" },
+    { "errorCodes": "*", "channel": 2, "mode": "Pulse", "pulseMs": 3000 }
+  ]
 }

@@ -203,22 +203,54 @@ Déploie par défaut:
 
 Le script rappelle si `usb_relay_device.dll` doit encore être copiée manuellement.
 
-## 6) Configuration du mapping relais
+## 6) Configuration du mapping relais (règles ErrorCode → canal)
 
-`relay-config.json`:
+`relay-config.json` (voir `config/relay-config.example.json`):
 
 ```json
 {
   "relaySerialNumber": null,
-  "passChannel": 1,
-  "failChannel": 2,
-  "pulseMs": 500
+  "rules": [
+    { "errorCodes": "0", "channel": 1, "mode": "Pulse", "pulseMs": 3000 },
+    { "errorCodes": "3", "channel": 3, "mode": "Latch" },
+    { "errorCodes": "*", "channel": 2, "mode": "Pulse", "pulseMs": 3000 }
+  ]
 }
 ```
 
 - `relaySerialNumber`: numéro de série de la carte à utiliser (`null` = première carte détectée).
-- `passChannel` / `failChannel`: canal activé selon le verdict (`ErrorCode == 0` → pass, sinon fail).
-- `pulseMs`: durée d'activation du canal avant relâchement (impulsion), en millisecondes.
+- `rules`: liste de règles évaluées dans l'ordre. La **première règle spécifique** (`errorCodes`
+  différent de `"*"`) qui correspond à l'`ErrorCode` MES gagne ; une règle `"*"` sert de secours
+  si rien de plus spécifique n'a matché.
+  - `errorCodes`: un code (`"0"`), une liste séparée par des virgules (`"1,2"`), ou `"*"` (tout le
+    reste).
+  - `channel`: canal du relais à déclencher.
+  - `mode`:
+    - `"Pulse"`: active le canal, attend `pulseMs` (ex. 3000 = 3s), puis le relâche automatiquement.
+    - `"Latch"`: active le canal et le **laisse ON** — reste allumé jusqu'à un forçage OFF/Reset
+      manuel (onglet "Relais USB" de la GUI, ou `--mode`... voir §7). Utile pour un défaut qui
+      doit rester visible/actif tant qu'un opérateur ne l'a pas explicitement acquitté.
+  - `pulseMs`: uniquement utilisé si `mode = "Pulse"`.
 
 Si ce fichier est absent, l'étape relais est simplement ignorée (le résultat MES est quand même
-retourné) — utile pour tester sans matériel branché.
+retourné) — utile pour tester sans matériel branché. Les anciens fichiers au format
+`passChannel`/`failChannel`/`pulseMs` continuent de se charger: ils sont automatiquement convertis
+en deux règles (`"0"` → passChannel, `"*"` → failChannel) au premier chargement.
+
+## 7) Onglet "Relais USB" (GUI) : détection, forçage manuel, édition des règles
+
+Dans la GUI, la section **"Relais USB — Configuration et test"** (entre Configuration et Action)
+permet de travailler sur le relais indépendamment d'un test MES:
+
+- **Détecter les cartes relais**: énumère les cartes USB branchées (numéro de série, nombre de
+  canaux) via `usb_relay_device.dll`.
+- **Forçage manuel**: sur un canal donné (et une carte optionnelle par numéro de série), quatre
+  actions indépendantes des règles ci-dessous — **Forcer ON** (maintenu), **Impulsion** (durée
+  configurable), **Forcer OFF / Reset** (c'est ce bouton qui libère un canal resté ON en mode
+  `Latch`), **Tout éteindre**, et **Lire l'état** (quels canaux sont actuellement ON).
+- **Règles de déclenchement automatique**: table éditable (ajouter/supprimer des lignes) pour le
+  `relay-config.json` en cours — "Charger" relit le fichier indiqué dans le champ Configuration,
+  "Enregistrer" y écrit les règles actuelles.
+
+Ces contrôles utilisent directement `usb_relay_device.dll` (§3 de la dépendance native) — sans
+cette DLL, ils échouent proprement avec un message d'erreur explicite plutôt que de planter.

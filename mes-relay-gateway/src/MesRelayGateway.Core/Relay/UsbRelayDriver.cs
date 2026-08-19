@@ -1,25 +1,44 @@
 using MesRelayGateway.Configuration;
-using MesRelayGateway.Mes;
 
 namespace MesRelayGateway.Relay;
 
 /// <summary>Drives an actual USB relay board via <see cref="UsbRelayController"/> (usb_relay_device.dll).</summary>
 public sealed class UsbRelayDriver : IRelayDriver
 {
-    public RelayTriggerResult Trigger(RelayConfig config, ErrorDecision decision)
+    public RelayTriggerResult Trigger(RelayConfig config, int? errorCode)
     {
-        var channel = decision.Verdict == RelayVerdict.Pass ? config.PassChannel : config.FailChannel;
+        var rule = config.FindMatch(errorCode);
+        if (rule is null)
+        {
+            return new RelayTriggerResult
+            {
+                Ok = false,
+                Channel = 0,
+                Error = $"Aucune regle relay-config ne correspond a ErrorCode={errorCode?.ToString() ?? "(aucun)"}.",
+            };
+        }
+
         try
         {
             using var relay = UsbRelayController.Open(config.RelaySerialNumber);
-            relay.PulseChannel(channel, config.PulseMs);
+
+            if (rule.Mode == RelayMode.Latch)
+            {
+                relay.OpenChannel(rule.Channel);
+            }
+            else
+            {
+                relay.PulseChannel(rule.Channel, rule.PulseMs);
+            }
+
             return new RelayTriggerResult
             {
                 Ok = true,
-                Channel = channel,
-                Verdict = decision.Verdict,
+                Channel = rule.Channel,
+                Latched = rule.Mode == RelayMode.Latch,
                 BoardSerialNumber = relay.SerialNumber,
-                PulseMs = config.PulseMs,
+                PulseMs = rule.Mode == RelayMode.Pulse ? rule.PulseMs : null,
+                RuleDescription = rule.Describe(),
             };
         }
         catch (Exception ex)
@@ -27,8 +46,9 @@ public sealed class UsbRelayDriver : IRelayDriver
             return new RelayTriggerResult
             {
                 Ok = false,
-                Channel = channel,
-                Verdict = decision.Verdict,
+                Channel = rule.Channel,
+                Latched = rule.Mode == RelayMode.Latch,
+                RuleDescription = rule.Describe(),
                 Error = ex.Message,
             };
         }
