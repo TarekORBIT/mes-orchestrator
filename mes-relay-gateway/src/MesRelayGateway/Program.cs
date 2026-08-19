@@ -86,19 +86,21 @@ public static class Program
             }
         }
 
-        // ── 2) Mode Test DLL : substitue temporairement MES_HAI.xml (adresse locale qui
-        // echoue instantanement) pour eviter les ~1-2 min de timeout reseau reel. Mode Reel
-        // restaure d'abord tout residu d'un run precedent interrompu, par securite. ──────
+        // ── 2) Mode Test DLL utilise les vraies adresses IP de MES_HAI.xml par defaut,
+        // exactement comme Mode Reel (seul le relais reste desactive) - --offline substitue
+        // temporairement une adresse locale qui echoue instantanement pour tester sans reseau
+        // Visteon. Dans tous les autres cas, on restaure d'abord tout residu d'un run
+        // --offline precedent interrompu, par securite. ──────────────────────────────────
         IDisposable? xmlOverrideScope = null;
         string? xmlOverrideNote = null;
-        if (options.Mode == GatewayMode.DllTest)
+        if (options.Mode == GatewayMode.DllTest && options.OfflineSimulation)
         {
             xmlOverrideScope = MesXmlOverride.Apply(MesXmlOverride.FixedXmlPath);
             xmlOverrideNote = xmlOverrideScope is not null
                 ? $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) temporairement remplace par une adresse locale (127.0.0.1) - restaure a la fin de l'appel."
                 : $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) introuvable - pas de substitution, la DLL utilisera son repli habituel.";
         }
-        else if (options.Mode == GatewayMode.Real)
+        else
         {
             MesXmlOverride.RestoreIfNeeded(MesXmlOverride.FixedXmlPath);
         }

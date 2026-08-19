@@ -17,6 +17,7 @@ public sealed class AppOptions
     public string? HaiInstanceOverride { get; init; }
     public string? BridgeExePathOverride { get; init; }
     public bool NoBridge { get; init; }
+    public bool OfflineSimulation { get; init; }
     public required GatewayMode Mode { get; init; }
 
     public required MesAction Action { get; init; }
@@ -30,6 +31,7 @@ public sealed class AppOptions
         string? config = null, xml = null, dll = null, ini = null, station = null, relayConfig = null, instance = null, mode = null, bridgeExe = null;
         string? action = null, serial = null, result = null, user = null, password = null;
         var noBridge = false;
+        var offlineSimulation = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -52,6 +54,7 @@ public sealed class AppOptions
                 case "--mode": mode = Next(); break;
                 case "--bridge-exe": bridgeExe = Next(); break;
                 case "--no-bridge": noBridge = true; break;
+                case "--offline": offlineSimulation = true; break;
                 case "--help":
                 case "-h":
                     throw new HelpRequestedException();
@@ -96,6 +99,7 @@ public sealed class AppOptions
             HaiInstanceOverride = instance,
             BridgeExePathOverride = bridgeExe is null ? null : Path.GetFullPath(bridgeExe),
             NoBridge = noBridge,
+            OfflineSimulation = offlineSimulation,
             Mode = gatewayMode,
             Action = parsedAction,
             SerialNumber = serial,
@@ -141,13 +145,17 @@ public sealed class AppOptions
                                               de l'orchestrateur Node.
                                    dll-test = appelle reellement MES_HAI.dll (via MesHaiBridge.exe
                                               si disponible) et capture son log, MAIS ne touche
-                                              jamais le relais. Fonctionne sans reseau Visteon:
-                                              hors reseau, MES_HAI.dll renvoie un vrai statut
-                                              metier (ex. ErrorCode 3 "NotLogged") au lieu de
-                                              planter - ideal pour valider le pipeline DLL/bridge/
-                                              log sans etre sur le VPN usine.
+                                              jamais le relais. Utilise les vraies adresses IP de
+                                              MES_HAI.xml comme le Mode Reel (donc necessite le
+                                              reseau/VPN Visteon pour un vrai login) - voir --offline
+                                              pour tester sans reseau.
                                    real     = appel reel MES_HAI.dll + relais physique si
                                               relayConfigPath resout (defaut).
+          --offline                Uniquement en --mode dll-test: substitue temporairement
+                                   MES_HAI.xml par une adresse locale qui echoue instantanement
+                                   (127.0.0.1), pour tester le chargement DLL/bridge/log sans
+                                   reseau Visteon (reponse en quelques secondes, fichier restaure
+                                   automatiquement apres, meme en cas de plantage).
           --action <name>         login | get-info | move-in | move-out-and-test
           --serial <n>            Numero de serie (requis sauf pour login)
           --result <Pass|Fail>    Resultat pour move-out-and-test (defaut Pass)
@@ -157,8 +165,12 @@ public sealed class AppOptions
           MesRelayGateway.exe --config C:\MESApps\ClientGateway\relay-gateway\config\client-config.json ^
             --action move-out-and-test --serial SN001 --result Pass
 
-        Exemple (tester la vraie DLL sans reseau Visteon, sans toucher au relais):
-          MesRelayGateway.exe --mode dll-test --dll "dll Env\dll Env\MES_HAI.dll" ^
+        Exemple (tester la vraie DLL sur le reseau Visteon, sans toucher au relais):
+          MesRelayGateway.exe --mode dll-test --dll C:\MESApps\ClientGateway\bridge\MES_HAI.dll ^
+            --bridge-exe C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe --station STATION_01 --action login
+
+        Exemple (meme chose, mais sans reseau Visteon, --offline):
+          MesRelayGateway.exe --mode dll-test --offline --dll "dll Env\dll Env\MES_HAI.dll" ^
             --bridge-exe production\bridge\publish\MesHaiBridge.exe --station TEST_STATION --action login
         """;
 }

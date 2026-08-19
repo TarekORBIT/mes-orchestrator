@@ -39,18 +39,27 @@ public partial class MainWindow : Window
         GatewayMode.Mock;
 
     // ── Mode Test / Test DLL / Reel ────────────────────────────────────────
+    private bool IsOfflineSimulation => OfflineSimulationCheckBox.IsChecked == true;
+
     private void OnModeChanged(object sender, RoutedEventArgs e)
     {
         // Fires during InitializeComponent (XAML sets IsChecked="True"), before the rest
         // of the window is built — bail out until every field we touch actually exists.
         if (ModeHintText is null) return;
 
+        OfflineSimulationCheckBox.Visibility = SelectedMode == GatewayMode.DllTest ? Visibility.Visible : Visibility.Collapsed;
+
         ModeHintText.Text = SelectedMode switch
         {
             GatewayMode.Mock => "Aucun fichier requis : donnees et relais simules.",
-            GatewayMode.DllTest => "Charge et interroge reellement MES_HAI.dll (via MesHaiBridge.exe si renseigne, sinon en direct) et capture son " +
-                                    "log, mais ne declenche jamais le relais et ne contacte jamais les vraies IP Visteon (MES_HAI.xml est temporairement " +
-                                    "remplace par une adresse locale, restauree automatiquement apres) - reponse en quelques secondes.",
+            GatewayMode.DllTest when IsOfflineSimulation =>
+                "Charge et interroge reellement MES_HAI.dll (via MesHaiBridge.exe si renseigne, sinon en direct) et capture son log, mais ne " +
+                "declenche jamais le relais. MES_HAI.xml est temporairement remplace par une adresse locale (127.0.0.1) - reponse en quelques " +
+                "secondes, ne contacte jamais les vraies IP Visteon, fichier restaure automatiquement apres.",
+            GatewayMode.DllTest =>
+                "Charge et interroge reellement MES_HAI.dll (via MesHaiBridge.exe si renseigne, sinon en direct) et capture son log, mais ne " +
+                "declenche jamais le relais. Utilise les vraies adresses IP de MES_HAI.xml (comme Mode Reel) : necessite le reseau/VPN Visteon " +
+                "pour un vrai login, sinon echoue proprement apres ~1-2 min. Cochez \"Simuler hors reseau\" pour tester sans VPN.",
             _ => "Necessite MES_HAI.dll + MES_HAI.xml valides, le reseau/VPN Visteon (les adresses IP de MES_HAI.xml doivent repondre) et, pour le relais, usb_relay_device.dll.",
         };
     }
@@ -314,9 +323,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        var offline = IsOfflineSimulation;
+        var willUseRealNetwork = mode == GatewayMode.Real || (mode == GatewayMode.DllTest && !offline);
+
         ExecuteButton.IsEnabled = false;
-        StatusText.Text = mode == GatewayMode.Real
-            ? "Execution en cours (peut prendre jusqu'a 1-2 min sur reseau lent)..."
+        StatusText.Text = willUseRealNetwork
+            ? "Execution en cours (peut prendre jusqu'a 1-2 min sur reseau lent ou hors VPN)..."
             : "Execution en cours...";
         ResultBanner.Visibility = Visibility.Collapsed;
         ResetDiagram();
@@ -324,7 +336,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var outcome = await Task.Run(() => RunFlow(mode, dllPath, bridgeExePath, haiInstance, relayConfigPath, station, action, serial, result, HighlightStep));
+            var outcome = await Task.Run(() => RunFlow(mode, offline, dllPath, bridgeExePath, haiInstance, relayConfigPath, station, action, serial, result, HighlightStep));
             StopLiveLog();
             ShowResult(mode, outcome);
             AddHistory(mode, action, station, serial, outcome.Flow, error: null);
@@ -347,22 +359,24 @@ public partial class MainWindow : Window
     private sealed record FlowOutcome(FlowResult Flow, string MesClientMode, string? XmlOverrideNote);
 
     /// <summary>Runs off the UI thread: builds the MES client / relay driver for the chosen mode and calls GatewayRunner.</summary>
-    private static FlowOutcome RunFlow(GatewayMode mode, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result, Action<GatewayStep> onStep)
+    private static FlowOutcome RunFlow(GatewayMode mode, bool offlineSimulation, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result, Action<GatewayStep> onStep)
     {
-        // Mode Test DLL: swap the fixed MES_HAI.xml MES_HAI.dll actually reads for a local,
-        // instantly-refusing address so a call fails in seconds instead of ~1-2 min of real
-        // TCP timeouts, and never reaches the real Visteon network. Mode Reel instead heals
-        // any leftover swap from a previously interrupted Test DLL run, defensively.
+        // Mode Test DLL uses the real MES_HAI.xml addresses by default, exactly like Mode
+        // Reel (only the relay stays disabled) - checking "Simuler hors reseau" swaps the
+        // fixed MES_HAI.xml MES_HAI.dll actually reads for a local, instantly-refusing
+        // address so a call fails in seconds instead of ~1-2 min of real TCP timeouts, and
+        // never reaches the real Visteon network. Otherwise, heal any leftover swap from a
+        // previously interrupted offline run, defensively.
         IDisposable? xmlOverrideScope = null;
         string? xmlOverrideNote = null;
-        if (mode == GatewayMode.DllTest)
+        if (mode == GatewayMode.DllTest && offlineSimulation)
         {
             xmlOverrideScope = MesXmlOverride.Apply(MesXmlOverride.FixedXmlPath);
             xmlOverrideNote = xmlOverrideScope is not null
                 ? $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) temporairement remplace par 127.0.0.1 - restaure a la fin de l'appel."
                 : $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) introuvable - pas de substitution.";
         }
-        else if (mode == GatewayMode.Real)
+        else
         {
             MesXmlOverride.RestoreIfNeeded(MesXmlOverride.FixedXmlPath);
         }

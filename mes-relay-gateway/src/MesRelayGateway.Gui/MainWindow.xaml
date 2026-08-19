@@ -47,8 +47,9 @@
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="Mode :" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0"/>
                         <RadioButton x:Name="ModeMockRadio" GroupName="Mode" Content="Mode Test (simulation, sans DLL ni reseau)" IsChecked="True" VerticalAlignment="Center" Checked="OnModeChanged"/>
-                        <RadioButton x:Name="ModeDllTestRadio" GroupName="Mode" Content="Mode Test DLL (MES_HAI.dll reelle, sans relais, sans reseau requis)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged"/>
+                        <RadioButton x:Name="ModeDllTestRadio" GroupName="Mode" Content="Mode Test DLL (MES_HAI.dll reelle, sans relais)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged"/>
                         <RadioButton x:Name="ModeRealRadio" GroupName="Mode" Content="Mode Reel (production: DLL + relais, adresses IP de MES_HAI.xml)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged"/>
+                        <CheckBox x:Name="OfflineSimulationCheckBox" Content="Simuler hors reseau (127.0.0.1, sans VPN Visteon)" Margin="24,0,0,0" VerticalAlignment="Center" Checked="OnModeChanged" Unchecked="OnModeChanged"/>
                     </StackPanel>
                     <TextBlock x:Name="ModeHintText" Margin="0,6,0,0" VerticalAlignment="Center" Foreground="#555555" FontStyle="Italic" TextWrapping="Wrap"
                                Text="Aucun fichier requis : donnees et relais simules."/>
