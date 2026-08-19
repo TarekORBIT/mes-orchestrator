@@ -33,6 +33,15 @@ public sealed class MockMesClient : IMesClient
         return Ok("get-info", new { SerialInformation = new { SerialNumber = serialNumber, info.PartNumber, info.WorkOrder, Status = "Active" } });
     }
 
+    public MesResult GetActiveWorkOrder(string station)
+    {
+        Simulate();
+        // Intentionally never resolves a PartNumber here, so the PartNumber gate in
+        // GatewayRunner is always skipped in Mode Test (known or unknown serial alike) -
+        // Mode Test stays focused on the classification/relay logic, not this business rule.
+        return Ok("work-order", new { WorkOrder = (object?)null });
+    }
+
     public MesResult MoveIn(string station, string serialNumber, bool activateWorkOrder, int layer)
     {
         Simulate();

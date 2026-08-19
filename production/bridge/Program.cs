@@ -104,8 +104,15 @@ public static class Program
             "move-in" => ExecuteMoveIn(traceability, request),
             "move-out" => ExecuteMoveOut(asm, traceability, request),
             "move-out-and-test" => ExecuteMoveOutAndTest(asm, traceability, request),
+            "work-order" => ExecuteWorkOrder(traceability, request),
             _ => throw new InvalidOperationException($"Unknown action '{action}'."),
         };
+    }
+
+    private static object? ExecuteWorkOrder(object traceability, BridgeRequest request)
+    {
+        RequireString(request.Station, "station");
+        return InvokeMethod(traceability, "WorkOrder_GetActiveByStation", request.Station!);
     }
 
     private static object? ExecuteLogin(object traceability, BridgeRequest request)
@@ -480,6 +487,7 @@ public static class Program
             "move-in" or "movein" => "move-in",
             "move-out" or "moveout" => "move-out",
             "move-out-and-test" or "move-out-and-test-results" or "moveoutandtestresults" => "move-out-and-test",
+            "work-order" or "workorder" or "work-order-get-active" => "work-order",
             _ => null,
         };
     }

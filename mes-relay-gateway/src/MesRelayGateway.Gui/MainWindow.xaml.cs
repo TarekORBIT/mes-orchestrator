@@ -486,7 +486,7 @@ public partial class MainWindow : Window
     private static readonly SolidColorBrush FailBg = new(Color.FromRgb(0xFF, 0xCD, 0xD2));
     private static readonly SolidColorBrush FailBorder = new(Color.FromRgb(0xC6, 0x28, 0x28));
 
-    private Border[] AllDiagramNodes => [NodeLogin, NodeConnState, NodeScan, NodeGetInfo, NodeErrorCheck1, NodeMoveIn, NodeErrorCheck2, NodeMoveOutAndTest, NodeErrorCheck3, NodeEnd];
+    private Border[] AllDiagramNodes => [NodeLogin, NodeConnState, NodeScan, NodeGetInfo, NodeErrorCheck1, NodePartNumber, NodeMoveIn, NodeErrorCheck2, NodeMoveOutAndTest, NodeErrorCheck3, NodeEnd];
 
     private void ResetDiagram()
     {
@@ -527,9 +527,13 @@ public partial class MainWindow : Window
                     SetNode(NodeGetInfo, DiagramNodeState.Active);
                     SetNode(NodeErrorCheck1, DiagramNodeState.Active);
                     break;
-                case GatewayStep.MoveIn:
+                case GatewayStep.CheckPartNumber:
                     SetNode(NodeGetInfo, DiagramNodeState.Ok);
                     SetNode(NodeErrorCheck1, DiagramNodeState.Ok);
+                    SetNode(NodePartNumber, DiagramNodeState.Active);
+                    break;
+                case GatewayStep.MoveIn:
+                    SetNode(NodePartNumber, DiagramNodeState.Ok);
                     SetNode(NodeMoveIn, DiagramNodeState.Active);
                     SetNode(NodeErrorCheck2, DiagramNodeState.Active);
                     break;
@@ -577,16 +581,30 @@ public partial class MainWindow : Window
 
             case MesAction.MoveIn:
             {
+                // Steps for MoveIn: [login, get-info, work-order, (part-number-check | move-in)]
                 var info = flow.Steps.Count > 1 ? flow.Steps[1] : null;
                 SetNode(NodeScan, DiagramNodeState.Ok);
                 SetNode(NodeGetInfo, StateFor(info));
                 SetNode(NodeErrorCheck1, StateFor(info));
                 if (info is not { Ok: true }) { SetNode(NodeEnd, DiagramNodeState.Fail); NodeEndText.Text = "Erreur"; break; }
 
-                var moveIn = flow.Steps.Count > 2 ? flow.Steps[2] : null;
-                SetNode(NodeMoveIn, StateFor(moveIn));
-                SetNode(NodeErrorCheck2, StateFor(moveIn));
-                FinishEnd(moveIn);
+                var workOrder = flow.Steps.Count > 2 ? flow.Steps[2] : null;
+                if (workOrder is not { Ok: true })
+                {
+                    SetNode(NodePartNumber, DiagramNodeState.Fail);
+                    SetNode(NodeEnd, DiagramNodeState.Fail);
+                    NodeEndText.Text = "Erreur";
+                    break;
+                }
+
+                var afterWorkOrder = flow.Steps.Count > 3 ? flow.Steps[3] : null;
+                var isPartNumberMismatch = afterWorkOrder?.Action == "part-number-check";
+                SetNode(NodePartNumber, isPartNumberMismatch ? DiagramNodeState.Fail : DiagramNodeState.Ok);
+                if (isPartNumberMismatch) { SetNode(NodeEnd, DiagramNodeState.Fail); NodeEndText.Text = "Erreur"; break; }
+
+                SetNode(NodeMoveIn, StateFor(afterWorkOrder));
+                SetNode(NodeErrorCheck2, StateFor(afterWorkOrder));
+                FinishEnd(afterWorkOrder);
                 break;
             }
 

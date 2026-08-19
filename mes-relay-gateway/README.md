@@ -84,7 +84,9 @@ La fenêtre s'ouvre directement en **Mode Test** (aucun fichier requis, tout est
    au fur et à mesure — utile pour voir que ça travaille réellement pendant une attente réseau
    (jusqu'à ~2 min sans "Simuler hors réseau"), plutôt que de se demander si l'appli est bloquée.
    Le **"Diagramme d'exécution"** (juste au-dessus) illustre le protocole Machine ↔ `MES_HAI.dll`
-   (`Login()` → `ConnectionState` → `Scan` → `Serial_GetInformation()` → ... → `Serial_MoveIn()`
+   (`Login()` → `ConnectionState` → `Scan` → `Serial_GetInformation()` → **vérification
+   PartNumber** (`WorkOrder_GetActiveByStation` vs `SerialInformation.PartNumber` — un vrai
+   mismatch bloque le flux avant `Serial_MoveIn()`, comme sur le poste réel) → `Serial_MoveIn()`
    → ...) et met en surbrillance bleue l'étape en cours, puis colore chaque case en vert (OK) ou
    rouge (échec) une fois le résultat connu — `Serial_MoveOutAndTestResults()` est marquée à part
    (barrée) car non couverte par les tests actuels.

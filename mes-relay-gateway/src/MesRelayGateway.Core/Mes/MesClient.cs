@@ -61,6 +61,9 @@ public sealed class MesClient : IMesClient
     public MesResult GetInfo(string station, string serialNumber) =>
         CaptureLog("get-info", () => Invoke("Serial_GetInformation", station, serialNumber));
 
+    public MesResult GetActiveWorkOrder(string station) =>
+        CaptureLog("work-order", () => Invoke("WorkOrder_GetActiveByStation", station));
+
     public MesResult MoveIn(string station, string serialNumber, bool activateWorkOrder, int layer) =>
         CaptureLog("move-in", () => Invoke("Serial_MoveIn", station, serialNumber, activateWorkOrder, layer));
 

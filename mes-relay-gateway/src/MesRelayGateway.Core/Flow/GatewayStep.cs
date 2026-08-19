@@ -9,6 +9,7 @@ public enum GatewayStep
 {
     Login,
     GetInfo,
+    CheckPartNumber,
     MoveIn,
     MoveOutAndTest,
     Relay,

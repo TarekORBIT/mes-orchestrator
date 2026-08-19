@@ -52,6 +52,9 @@ public sealed class BridgeMesClient : IMesClient
     public MesResult GetInfo(string station, string serialNumber) =>
         Invoke("get-info", new BridgeRequestDto { Station = station, SerialNumber = serialNumber });
 
+    public MesResult GetActiveWorkOrder(string station) =>
+        Invoke("work-order", new BridgeRequestDto { Station = station });
+
     public MesResult MoveIn(string station, string serialNumber, bool activateWorkOrder, int layer) =>
         Invoke("move-in", new BridgeRequestDto { Station = station, SerialNumber = serialNumber, ActivateWorkOrder = activateWorkOrder, Layer = layer });
 

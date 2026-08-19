@@ -11,4 +11,7 @@ public interface IMesClient : IDisposable
     MesResult GetInfo(string station, string serialNumber);
     MesResult MoveIn(string station, string serialNumber, bool activateWorkOrder, int layer);
     MesResult MoveOutAndTest(string station, string serialNumber, string result, string groupId, string groupVersion, int layer, bool checkMultiBoard);
+
+    /// <summary>WorkOrder_GetActiveByStation - used to fetch the expected PartNumber for the PartNumber check ahead of MoveIn.</summary>
+    MesResult GetActiveWorkOrder(string station);
 }

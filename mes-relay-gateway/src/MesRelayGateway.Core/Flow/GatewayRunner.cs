@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Text.Json;
 using MesRelayGateway.Configuration;
 using MesRelayGateway.Mes;
 using MesRelayGateway.Relay;
@@ -83,6 +85,14 @@ public static class GatewayRunner
         return result;
     }
 
+    /// <summary>
+    /// Mirrors the reference Machine/MES_HAI.dll protocol (Login -> Serial_GetInformation ->
+    /// PartNumber check against the station's active work order -> Serial_MoveIn): fetches the
+    /// expected PartNumber via WorkOrder_GetActiveByStation and compares it against
+    /// SerialInformation.PartNumber before allowing MoveIn. If either side's PartNumber can't
+    /// be determined (e.g. Mode Test's mock, which never resolves one), the check is skipped
+    /// rather than blocking - only an actual mismatch blocks the flow.
+    /// </summary>
     private static MesResult RunMoveIn(IMesClient mes, List<MesResult> steps, string station, string serialNumber, Action<GatewayStep>? onStep)
     {
         onStep?.Invoke(GatewayStep.GetInfo);
@@ -90,9 +100,62 @@ public static class GatewayRunner
         steps.Add(info);
         if (!info.Ok) return info;
 
+        onStep?.Invoke(GatewayStep.CheckPartNumber);
+        var workOrder = mes.GetActiveWorkOrder(station);
+        steps.Add(workOrder);
+        if (!workOrder.Ok) return workOrder;
+
+        var expectedPartNumber = ExtractField(workOrder.Result, "WorkOrder", "PartNumber");
+        var actualPartNumber = ExtractField(info.Result, "SerialInformation", "PartNumber");
+        if (expectedPartNumber is not null && actualPartNumber is not null
+            && !string.Equals(expectedPartNumber, actualPartNumber, StringComparison.OrdinalIgnoreCase))
+        {
+            var mismatch = new MesResult
+            {
+                Ok = false,
+                Action = "part-number-check",
+                ErrorCode = null,
+                ErrorDescription = $"PartNumberMismatch: attendu '{expectedPartNumber}' (WorkOrder actif), recu '{actualPartNumber}' (SerialInformation)",
+                Result = new { expectedPartNumber, actualPartNumber },
+            };
+            steps.Add(mismatch);
+            return mismatch;
+        }
+
         onStep?.Invoke(GatewayStep.MoveIn);
         var moveIn = mes.MoveIn(station, serialNumber, activateWorkOrder: true, layer: 0);
         steps.Add(moveIn);
         return moveIn;
+    }
+
+    /// <summary>
+    /// Digs a dotted-path field out of a MesResult.Result, whatever shape it happens to be in:
+    /// a Dictionary&lt;string, object?&gt; (direct MesClient, via ObjectGraphFlattener), a
+    /// JsonElement (BridgeMesClient, deserialized from the bridge's JSON), or a plain
+    /// POCO/anonymous object (MockMesClient) via reflection.
+    /// </summary>
+    private static string? ExtractField(object? source, params string[] path)
+    {
+        object? current = source;
+        foreach (var key in path)
+        {
+            if (current is null) return null;
+
+            current = current switch
+            {
+                IDictionary<string, object?> dict => dict.TryGetValue(key, out var v) ? v : null,
+                JsonElement { ValueKind: JsonValueKind.Object } je => je.TryGetProperty(key, out var prop) ? prop : null,
+                _ => current.GetType().GetProperty(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)?.GetValue(current),
+            };
+        }
+
+        return current switch
+        {
+            null => null,
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+            JsonElement { ValueKind: JsonValueKind.Null } => null,
+            _ => current.ToString(),
+        };
     }
 }

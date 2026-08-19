@@ -238,8 +238,8 @@
                         <TextBlock TextAlignment="Center"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#F9A825"/><LineBreak/><Run Text="ErrorCode == 0 ?"/></TextBlock>
                     </Border>
                     <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
-                    <Border x:Name="NodePartNumber" Style="{StaticResource DiagramNodeStyle}" Opacity="0.6">
-                        <TextBlock TextAlignment="Center" FontStyle="Italic"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#9E9E9E"/><LineBreak/><Run Text="PartNumber attendu == SerialInfo.PartNumber ? (non verifie par cet outil generique)"/></TextBlock>
+                    <Border x:Name="NodePartNumber" Style="{StaticResource DiagramNodeStyle}">
+                        <TextBlock TextAlignment="Center"><Run Text="Machine" FontWeight="Bold" FontSize="10" Foreground="#F9A825"/><LineBreak/><Run Text="WorkOrder actif.PartNumber == SerialInfo.PartNumber ?"/></TextBlock>
                     </Border>
                     <TextBlock Text="▼" Style="{StaticResource DiagramArrowStyle}"/>
                     <Border x:Name="NodeMoveIn" Style="{StaticResource DiagramNodeStyle}">
