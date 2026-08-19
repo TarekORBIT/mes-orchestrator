@@ -45,8 +45,8 @@ public partial class MainWindow : Window
         {
             GatewayMode.Mock => "Aucun fichier requis : donnees et relais simules.",
             GatewayMode.DllTest => "Charge et interroge reellement MES_HAI.dll (via MesHaiBridge.exe si renseigne, sinon en direct) et capture son " +
-                                    "log, mais ne declenche jamais le relais. Fonctionne sans reseau Visteon : hors reseau, la DLL renvoie un vrai " +
-                                    "statut metier (ex. ErrorCode 3 \"NotLogged\") au lieu de planter - comptez jusqu'a ~1-2 min pour qu'elle abandonne.",
+                                    "log, mais ne declenche jamais le relais et ne contacte jamais les vraies IP Visteon (MES_HAI.xml est temporairement " +
+                                    "remplace par une adresse locale, restauree automatiquement apres) - reponse en quelques secondes.",
             _ => "Necessite MES_HAI.dll + MES_HAI.xml valides, le reseau/VPN Visteon (les adresses IP de MES_HAI.xml doivent repondre) et, pour le relais, usb_relay_device.dll.",
         };
     }
@@ -137,8 +137,8 @@ public partial class MainWindow : Window
         }
 
         ExecuteButton.IsEnabled = false;
-        StatusText.Text = mode == GatewayMode.DllTest
-            ? "Execution en cours (peut prendre jusqu'a 1-2 min hors reseau Visteon)..."
+        StatusText.Text = mode == GatewayMode.Real
+            ? "Execution en cours (peut prendre jusqu'a 1-2 min sur reseau lent)..."
             : "Execution en cours...";
         ResultBanner.Visibility = Visibility.Collapsed;
         ResetDiagram();
@@ -166,34 +166,59 @@ public partial class MainWindow : Window
         }
     }
 
-    private sealed record FlowOutcome(FlowResult Flow, string MesClientMode);
+    private sealed record FlowOutcome(FlowResult Flow, string MesClientMode, string? XmlOverrideNote);
 
     /// <summary>Runs off the UI thread: builds the MES client / relay driver for the chosen mode and calls GatewayRunner.</summary>
     private static FlowOutcome RunFlow(GatewayMode mode, string dllPath, string bridgeExePath, string haiInstance, string relayConfigPath, string station, MesAction action, string serial, string result, Action<GatewayStep> onStep)
     {
-        RelayConfig? relayConfig = null;
-        if (!string.IsNullOrWhiteSpace(relayConfigPath) && File.Exists(relayConfigPath))
+        // Mode Test DLL: swap the fixed MES_HAI.xml MES_HAI.dll actually reads for a local,
+        // instantly-refusing address so a call fails in seconds instead of ~1-2 min of real
+        // TCP timeouts, and never reaches the real Visteon network. Mode Reel instead heals
+        // any leftover swap from a previously interrupted Test DLL run, defensively.
+        IDisposable? xmlOverrideScope = null;
+        string? xmlOverrideNote = null;
+        if (mode == GatewayMode.DllTest)
         {
-            relayConfig = RelayConfig.Load(relayConfigPath);
+            xmlOverrideScope = MesXmlOverride.Apply(MesXmlOverride.FixedXmlPath);
+            xmlOverrideNote = xmlOverrideScope is not null
+                ? $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) temporairement remplace par 127.0.0.1 - restaure a la fin de l'appel."
+                : $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) introuvable - pas de substitution.";
+        }
+        else if (mode == GatewayMode.Real)
+        {
+            MesXmlOverride.RestoreIfNeeded(MesXmlOverride.FixedXmlPath);
         }
 
-        var mesClientMode = "mock";
-        using IMesClient mes = mode == GatewayMode.Mock
-            ? new MockMesClient()
-            : CreateRealClient(dllPath, bridgeExePath, haiInstance, out mesClientMode);
-
-        // DllTest never touches the relay, even if a relay-config resolves — the point of
-        // this mode is to exercise MES_HAI.dll/its log safely, not the physical output.
-        IRelayDriver? relayDriver = mode switch
+        try
         {
-            GatewayMode.Mock => relayConfig is null ? null : new MockRelayDriver(),
-            GatewayMode.DllTest => null,
-            GatewayMode.Real => relayConfig is null ? null : new UsbRelayDriver(),
-            _ => null,
-        };
+            RelayConfig? relayConfig = null;
+            if (!string.IsNullOrWhiteSpace(relayConfigPath) && File.Exists(relayConfigPath))
+            {
+                relayConfig = RelayConfig.Load(relayConfigPath);
+            }
 
-        var flow = GatewayRunner.Run(mes, relayDriver, mode == GatewayMode.DllTest ? null : relayConfig, station, action, serial, result, user: null, password: null, onStep);
-        return new FlowOutcome(flow, mesClientMode);
+            var mesClientMode = "mock";
+            using IMesClient mes = mode == GatewayMode.Mock
+                ? new MockMesClient()
+                : CreateRealClient(dllPath, bridgeExePath, haiInstance, out mesClientMode);
+
+            // DllTest never touches the relay, even if a relay-config resolves — the point of
+            // this mode is to exercise MES_HAI.dll/its log safely, not the physical output.
+            IRelayDriver? relayDriver = mode switch
+            {
+                GatewayMode.Mock => relayConfig is null ? null : new MockRelayDriver(),
+                GatewayMode.DllTest => null,
+                GatewayMode.Real => relayConfig is null ? null : new UsbRelayDriver(),
+                _ => null,
+            };
+
+            var flow = GatewayRunner.Run(mes, relayDriver, mode == GatewayMode.DllTest ? null : relayConfig, station, action, serial, result, user: null, password: null, onStep);
+            return new FlowOutcome(flow, mesClientMode, xmlOverrideNote);
+        }
+        finally
+        {
+            xmlOverrideScope?.Dispose();
+        }
     }
 
     private static IMesClient CreateRealClient(string dllPath, string bridgeExePath, string haiInstance, out string mesClientMode)
@@ -424,7 +449,7 @@ public partial class MainWindow : Window
             $"Mode: {modeLabel}  |  Action: {flow.Action}  |  Station: {flow.Station}  |  Serie: {flow.SerialNumber ?? "-"}\n" +
             $"MES: ErrorCode={flow.FinalResult.ErrorCode?.ToString() ?? "-"}  ErrorDescription={flow.FinalResult.ErrorDescription ?? "-"}";
 
-        ResultRelayText.Text = flow.Relay switch
+        var relayLine = flow.Relay switch
         {
             { } r when r.Ok => $"Relais: canal {r.Channel} declenche ({r.Verdict}), carte {r.BoardSerialNumber}{(r.Simulated ? " [simule]" : "")}.",
             { } r => $"Relais: ECHEC canal {r.Channel} ({r.Verdict}) - {r.Error}",
@@ -432,6 +457,7 @@ public partial class MainWindow : Window
             null when mode == GatewayMode.DllTest => "Relais: volontairement desactive en Mode Test DLL.",
             _ => "Relais: non configure.",
         };
+        ResultRelayText.Text = outcome.XmlOverrideNote is null ? relayLine : $"{relayLine}\n{outcome.XmlOverrideNote}";
 
         // The live-streamed text should already match, but the flow's own captured log is
         // authoritative (e.g. includes trailing lines written right as the process exited).

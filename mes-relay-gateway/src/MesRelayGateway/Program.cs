@@ -86,46 +86,71 @@ public static class Program
             }
         }
 
-        // ── 2) Choix du mode: Test (simulation) / Test DLL (reel, sans relais) / Reel ────
-        var mesClientMode = "mock";
-        using IMesClient mes = options.Mode == GatewayMode.Mock
-            ? new MockMesClient()
-            : LoadRealMesClient(xmlPath, dllPath, haiInstance, bridgeExePath, gatewayConfig.BridgeTimeoutMs, options.NoBridge, out servers, out mesClientMode);
-
-        // DllTest never touches the relay, even if a relay-config resolves — the point of
-        // this mode is to exercise MES_HAI.dll/its log safely, not the physical output.
-        IRelayDriver? relayDriver = options.Mode switch
+        // ── 2) Mode Test DLL : substitue temporairement MES_HAI.xml (adresse locale qui
+        // echoue instantanement) pour eviter les ~1-2 min de timeout reseau reel. Mode Reel
+        // restaure d'abord tout residu d'un run precedent interrompu, par securite. ──────
+        IDisposable? xmlOverrideScope = null;
+        string? xmlOverrideNote = null;
+        if (options.Mode == GatewayMode.DllTest)
         {
-            GatewayMode.Mock => relayConfig is null ? null : new MockRelayDriver(),
-            GatewayMode.DllTest => null,
-            GatewayMode.Real => relayConfig is null ? null : new UsbRelayDriver(),
-            _ => null,
-        };
-        if (options.Mode == GatewayMode.DllTest && relayConfig is not null)
+            xmlOverrideScope = MesXmlOverride.Apply(MesXmlOverride.FixedXmlPath);
+            xmlOverrideNote = xmlOverrideScope is not null
+                ? $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) temporairement remplace par une adresse locale (127.0.0.1) - restaure a la fin de l'appel."
+                : $"MES_HAI.xml ({MesXmlOverride.FixedXmlPath}) introuvable - pas de substitution, la DLL utilisera son repli habituel.";
+        }
+        else if (options.Mode == GatewayMode.Real)
         {
-            relaySkippedReason = "Mode Test DLL: relais volontairement desactive (utiliser --mode real pour le declencher).";
+            MesXmlOverride.RestoreIfNeeded(MesXmlOverride.FixedXmlPath);
         }
 
-        // ── 3) Appel MES + classification d'erreur + sortie relais ──────────────────────
-        var flow = GatewayRunner.Run(mes, relayDriver, relayConfig, station, options.Action, options.SerialNumber, options.Result, options.User, options.Password);
-
-        PrintJson(new Dictionary<string, object?>
+        try
         {
-            ["ok"] = flow.Ok,
-            ["mode"] = options.Mode switch { GatewayMode.Mock => "test", GatewayMode.DllTest => "dll-test", _ => "real" },
-            ["mesClientMode"] = mesClientMode,
-            ["action"] = flow.Action.ToString(),
-            ["station"] = flow.Station,
-            ["serialNumber"] = flow.SerialNumber,
-            ["config"] = new { xmlPath, dllPath, haiInstance, bridgeExePath, relayConfigPath },
-            ["mesServers"] = servers.Select(s => new { s.IpAddress, s.Port, s.Description }),
-            ["steps"] = flow.Steps.Select(s => new { s.Action, s.Ok, s.ErrorCode, s.ErrorDescription, s.Result, s.EngineLog }),
-            ["decision"] = flow.Decision,
-            ["relay"] = flow.Relay,
-            ["relayNote"] = relaySkippedReason ?? flow.RelayNote,
-        });
+            // ── 3) Choix du mode: Test (simulation) / Test DLL (reel, sans relais) / Reel ──
+            var mesClientMode = "mock";
+            using IMesClient mes = options.Mode == GatewayMode.Mock
+                ? new MockMesClient()
+                : LoadRealMesClient(xmlPath, dllPath, haiInstance, bridgeExePath, gatewayConfig.BridgeTimeoutMs, options.NoBridge, out servers, out mesClientMode);
 
-        return flow.Ok ? 0 : 1;
+            // DllTest never touches the relay, even if a relay-config resolves — the point of
+            // this mode is to exercise MES_HAI.dll/its log safely, not the physical output.
+            IRelayDriver? relayDriver = options.Mode switch
+            {
+                GatewayMode.Mock => relayConfig is null ? null : new MockRelayDriver(),
+                GatewayMode.DllTest => null,
+                GatewayMode.Real => relayConfig is null ? null : new UsbRelayDriver(),
+                _ => null,
+            };
+            if (options.Mode == GatewayMode.DllTest && relayConfig is not null)
+            {
+                relaySkippedReason = "Mode Test DLL: relais volontairement desactive (utiliser --mode real pour le declencher).";
+            }
+
+            // ── 4) Appel MES + classification d'erreur + sortie relais ──────────────────
+            var flow = GatewayRunner.Run(mes, relayDriver, relayConfig, station, options.Action, options.SerialNumber, options.Result, options.User, options.Password);
+
+            PrintJson(new Dictionary<string, object?>
+            {
+                ["ok"] = flow.Ok,
+                ["mode"] = options.Mode switch { GatewayMode.Mock => "test", GatewayMode.DllTest => "dll-test", _ => "real" },
+                ["mesClientMode"] = mesClientMode,
+                ["action"] = flow.Action.ToString(),
+                ["station"] = flow.Station,
+                ["serialNumber"] = flow.SerialNumber,
+                ["config"] = new { xmlPath, dllPath, haiInstance, bridgeExePath, relayConfigPath },
+                ["mesServers"] = servers.Select(s => new { s.IpAddress, s.Port, s.Description }),
+                ["steps"] = flow.Steps.Select(s => new { s.Action, s.Ok, s.ErrorCode, s.ErrorDescription, s.Result, s.EngineLog }),
+                ["decision"] = flow.Decision,
+                ["relay"] = flow.Relay,
+                ["relayNote"] = relaySkippedReason ?? flow.RelayNote,
+                ["xmlOverrideNote"] = xmlOverrideNote,
+            });
+
+            return flow.Ok ? 0 : 1;
+        }
+        finally
+        {
+            xmlOverrideScope?.Dispose();
+        }
     }
 
     private static IMesClient LoadRealMesClient(

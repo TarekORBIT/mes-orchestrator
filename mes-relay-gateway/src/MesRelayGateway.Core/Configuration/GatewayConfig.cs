@@ -36,11 +36,11 @@ public sealed class GatewayConfig
     public string BridgeExePath { get; set; } = @"C:\MESApps\ClientGateway\bridge\MesHaiBridge.exe";
 
     /// <summary>
-    /// production/orchestrator defaults this to 20000ms, which is tuned for a reachable
-    /// factory network. Off-network, MES_HAI.dll's own load-balancing check times out on
-    /// each unreachable CIM server (~21s each, tried more than once), so a short timeout
-    /// here would kill the bridge before it can return its real ("NotLogged") status. 120s
-    /// gives that enough room while still being a real cap.
+    /// production/orchestrator defaults this to 20000ms, tuned for a reachable factory
+    /// network. Mode Test DLL no longer needs a long timeout itself (it swaps in a
+    /// fast-refusing address, see MesXmlOverride) but Mode Reel's real network calls can
+    /// legitimately take longer than 20s under load, so 120s stays as a generous safety
+    /// ceiling rather than the actual expected wait.
     /// </summary>
     [JsonPropertyName("bridgeTimeoutMs")]
     public int BridgeTimeoutMs { get; set; } = 120000;

@@ -68,16 +68,18 @@ La fenêtre s'ouvre directement en **Mode Test** (aucun fichier requis, tout est
    "SerialNotFound"), et cliquer **Exécuter**.
 2. Le résultat s'affiche en clair (bandeau vert = OK, rouge = erreur, avec l'explication), plus le
    détail technique (JSON) repliable, et un historique des essais en bas de fenêtre.
-3. Pour exercer la vraie DLL **sans réseau Visteon et sans risque sur le relais**: cocher
-   **Mode Test DLL**, renseigner les chemins vers `MES_HAI.dll` (dossier complet avec ses
-   dépendances, voir §3) et `MesHaiBridge.exe`, puis exécuter. Comptez ~1 à 2 minutes hors
-   réseau: la DLL essaie réellement les serveurs CIM, échoue proprement, et répond avec un vrai
-   statut métier (ex. `NotLogged`, ErrorCode 3) au lieu de planter — le relais, lui, reste
-   toujours désactivé dans ce mode.
+3. Pour exercer la vraie DLL **sans jamais contacter le réseau Visteon et sans risque sur le
+   relais**: cocher **Mode Test DLL**, renseigner les chemins vers `MES_HAI.dll` (dossier complet
+   avec ses dépendances, voir §3) et `MesHaiBridge.exe`, puis exécuter. Réponse en quelques
+   secondes: la DLL tourne réellement (chargement, log4net/LogLibrary) mais son fichier de
+   serveurs est temporairement substitué par une adresse locale qui échoue instantanément — elle
+   ne touche jamais `10.216.140.205/206` — et répond avec un vrai statut métier (ex. `NotLogged`,
+   ErrorCode 3) au lieu de planter. Le relais, lui, reste toujours désactivé dans ce mode. Détails
+   techniques en §3.
 
-   Pendant l'exécution (Test DLL ou Réel), le panneau **"Journal MES_HAI.dll en temps réel"**
-   s'ouvre et se remplit au fur et à mesure — utile pour voir que ça travaille réellement pendant
-   l'attente réseau (jusqu'à ~2 min hors VPN), plutôt que de se demander si l'appli est bloquée.
+   Pendant l'exécution, le panneau **"Journal MES_HAI.dll en temps réel"** s'ouvre et se remplit
+   au fur et à mesure — utile pour voir que ça travaille réellement (surtout en Mode Réel, où
+   l'attente réseau peut aller jusqu'à ~2 min), plutôt que de se demander si l'appli est bloquée.
    Le **"Diagramme d'exécution"** (juste au-dessus) illustre le protocole Machine ↔ `MES_HAI.dll`
    (`Login()` → `ConnectionState` → `Scan` → `Serial_GetInformation()` → ... → `Serial_MoveIn()`
    → ...) et met en surbrillance bleue l'étape en cours, puis colore chaque case en vert (OK) ou
@@ -148,16 +150,23 @@ n'affecte que la façon dont la DLL est hébergée.
 **Tester sans être sur le réseau usine (Mode Test DLL)**: pointez `haiDllPath` vers le dossier
 qui contient `MES_HAI.dll` **et ses dépendances** (`LogLibrary.dll`, `log4net.dll`,
 `Newtonsoft.Json.dll` — dans ce dépôt, `dll Env\dll Env\`), choisissez le **Mode Test DLL**
-(GUI) ou `--mode dll-test` (CLI), lancez une action (ex. `login`). La DLL se charge, contacte
-réellement les serveurs CIM listés dans `MES_HAI.xml`, échoue à s'y connecter (hors réseau/VPN
-Visteon) et retourne un vrai statut métier — typiquement `ErrorCode 3 "NotLogged"` — au lieu de
-planter, avec le `Log\MES_HAI.log` réel en prime. C'est normal et attendu: ça valide tout le
-pipeline (chargement DLL, bridge, logging) sans nécessiter le VPN, **sans jamais piloter le
-relais** (désactivé d'office dans ce mode). Seul un `ErrorCode 0` (login réellement accepté)
-demande d'être sur le réseau Visteon — à tester alors en **Mode Réel**. Comptez large sur le
-temps de réponse: `MES_HAI.dll` retente les deux serveurs CIM (primaire + secondaire), ~21s de
-timeout chacun, parfois deux fois — d'où le `bridgeTimeoutMs` par défaut de 120000ms (au lieu
-des 20000ms de production/orchestrator, calibrés pour un réseau qui répond).
+(GUI) ou `--mode dll-test` (CLI), lancez une action (ex. `login`). `MES_HAI.dll` se charge et
+tourne pour de vrai — mais **elle ne contacte jamais les vraies IP Visteon**: seul le
+**Mode Réel** utilise les adresses de `MES_HAI.xml`.
+
+Techniquement, `MES_HAI.dll` ne lit pas le `--xml` qu'on lui passe — elle résout toujours son
+propre chemin fixe, `C:\ProgramData\MESApps\CIM\MES_HAI.xml`, et son unique constructeur
+(`Traceability(station)`) y lance un `LoadBalancing()` réseau *avant même* `Login()` ; il n'existe
+aucun moyen de charger la DLL "silencieusement". En **Mode Test DLL**, l'outil sauvegarde donc le
+contenu réel de ce fichier, le remplace temporairement par une adresse locale qui refuse la
+connexion instantanément (`127.0.0.1`), laisse la DLL échouer en quelques secondes avec un vrai
+statut métier (`ErrorCode 3 "NotLogged"`) et un vrai `Log\MES_HAI.log`, puis **restaure le
+fichier original** — même en cas de plantage (sauvegarde sur disque, auto-réparée au prochain
+lancement, quel que soit le mode). Le **Mode Réel** restaure aussi ce fichier par précaution
+avant de démarrer, au cas où une exécution Test DLL précédente aurait été interrompue brutalement.
+Le relais reste désactivé d'office dans ce mode, quoi qu'il arrive. Seul un `ErrorCode 0`
+(login réellement accepté sur les vraies IP) demande d'être sur le réseau Visteon — à tester
+alors en **Mode Réel**.
 
 ## 4) Dépendance native : usb_relay_device.dll
 
