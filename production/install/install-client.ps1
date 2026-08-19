@@ -74,12 +74,21 @@ $projectRoot = (Resolve-Path (Join-Path $productionRoot "..")).Path
 $orchestratorSource = Join-Path $productionRoot "orchestrator\mes-orchestrator.js"
 $configTemplateSource = Join-Path $productionRoot "config\client-config.template.json"
 $mesXmlSource = Join-Path $projectRoot "MES_HAI.xml"
-$mesDllSource = Join-Path $projectRoot "MES_HAI.dll"
+
+# MES_HAI.dll is NOT self-sufficient: it loads LogLibrary.dll/log4net.dll/Newtonsoft.Json.dll
+# by strong name at runtime, and the versions must match exactly (confirmed the hard way:
+# copying MES_HAI.dll alone produces "Could not load file or assembly 'LogLibrary...'" on the
+# target machine). "dll Env\dll Env" is the only folder in this repo with a verified-complete,
+# self-consistent set (MES_HAI.dll v4.6.0.12 + its matching LogLibrary v2.0.0.2) - always deploy
+# all of it together, never MES_HAI.dll on its own.
+$mesDllEnvDir = Join-Path $projectRoot "dll Env\dll Env"
+$mesDllSource = Join-Path $mesDllEnvDir "MES_HAI.dll"
 
 Assert-File $orchestratorSource "Orchestrateur Node"
 Assert-File $configTemplateSource "Template config"
 Assert-File $mesXmlSource "MES_HAI.xml"
-Assert-File $mesDllSource "MES_HAI.dll"
+Assert-File $mesDllSource "MES_HAI.dll (dll Env)"
+Assert-File (Join-Path $mesDllEnvDir "LogLibrary.dll") "LogLibrary.dll (dll Env)"
 
 $bridgeExeSource = Resolve-BridgeBinaryPath -ProductionRootPath $productionRoot -TryBuild:$BuildBridgeIfNeeded
 $bridgePublishDir = Split-Path -Parent $bridgeExeSource
@@ -94,7 +103,9 @@ New-Item -ItemType Directory -Force -Path $InstallRoot, $bridgeDir, $orchestrato
 
 Write-Step "Copie du bridge + dependances"
 Copy-Item -Path (Join-Path $bridgePublishDir "*") -Destination $bridgeDir -Force
-Copy-Item -LiteralPath $mesDllSource -Destination (Join-Path $bridgeDir "MES_HAI.dll") -Force
+
+Write-Step "Copie de MES_HAI.dll + dependances (LogLibrary.dll, log4net.dll, Newtonsoft.Json.dll)"
+Copy-Item -Path (Join-Path $mesDllEnvDir "*") -Destination $bridgeDir -Force
 
 Write-Step "Copie de l'orchestrateur Node"
 Copy-Item -LiteralPath $orchestratorSource -Destination (Join-Path $orchestratorDir "mes-orchestrator.js") -Force
@@ -165,7 +176,7 @@ Write-Host "Installation terminee." -ForegroundColor Green
 Write-Host "InstallRoot       : $InstallRoot"
 Write-Host "MES XML           : $(Join-Path $ProgramDataCimPath 'MES_HAI.xml')"
 Write-Host "Bridge EXE        : $(Join-Path $bridgeDir 'MesHaiBridge.exe')"
-Write-Host "Bridge DLL        : $(Join-Path $bridgeDir 'MES_HAI.dll')"
+Write-Host "Bridge DLL + deps : $bridgeDir (MES_HAI.dll, LogLibrary.dll, log4net.dll, Newtonsoft.Json.dll)"
 Write-Host "Orchestrator      : $(Join-Path $orchestratorDir 'mes-orchestrator.js')"
 Write-Host "Config            : $clientConfigPath"
 Write-Host "Station INI       : $stationIniPath"

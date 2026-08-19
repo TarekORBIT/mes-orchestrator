@@ -123,11 +123,20 @@ $embarqueRoot = (Resolve-Path (Join-Path $projectRoot "..")).Path
 $configTemplateSource = Join-Path $projectRoot "config\client-config.template.json"
 $relayConfigExampleSource = Join-Path $projectRoot "config\relay-config.example.json"
 $mesXmlSource = Join-Path $embarqueRoot "MES_HAI.xml"
-$mesDllSource = Join-Path $embarqueRoot "MES_HAI.dll"
+
+# MES_HAI.dll is NOT self-sufficient: it loads LogLibrary.dll/log4net.dll/Newtonsoft.Json.dll
+# by strong name at runtime, and the versions must match exactly (confirmed the hard way:
+# copying MES_HAI.dll alone produces "Could not load file or assembly 'LogLibrary...'" on the
+# target machine). "dll Env\dll Env" is the only folder in this repo with a verified-complete,
+# self-consistent set (MES_HAI.dll v4.6.0.12 + its matching LogLibrary v2.0.0.2) - always deploy
+# all of it together, never MES_HAI.dll on its own.
+$mesDllEnvDir = Join-Path $embarqueRoot "dll Env\dll Env"
+$mesDllSource = Join-Path $mesDllEnvDir "MES_HAI.dll"
 
 Assert-File $configTemplateSource "Template config"
 Assert-File $mesXmlSource "MES_HAI.xml"
-Assert-File $mesDllSource "MES_HAI.dll"
+Assert-File $mesDllSource "MES_HAI.dll (dll Env)"
+Assert-File (Join-Path $mesDllEnvDir "LogLibrary.dll") "LogLibrary.dll (dll Env)"
 
 $exeSource = Resolve-RelayGatewayBinaryPath -ProjectRootPath $projectRoot -TryBuild:$BuildIfNeeded
 $publishDir = Split-Path -Parent $exeSource
@@ -161,8 +170,8 @@ if ($WithBridge) {
   Copy-Item -Path (Join-Path $bridgePublishDir "*") -Destination $bridgeDir -Force
 }
 
-Write-Step "Copie de MES_HAI.dll (partagee avec le bridge C#)"
-Copy-Item -LiteralPath $mesDllSource -Destination (Join-Path $bridgeDir "MES_HAI.dll") -Force
+Write-Step "Copie de MES_HAI.dll + dependances (LogLibrary.dll, log4net.dll, Newtonsoft.Json.dll) - partagees avec le bridge C#"
+Copy-Item -Path (Join-Path $mesDllEnvDir "*") -Destination $bridgeDir -Force
 
 Write-Step "Copie de la configuration MES XML"
 Copy-Item -LiteralPath $mesXmlSource -Destination (Join-Path $ProgramDataCimPath "MES_HAI.xml") -Force
@@ -207,7 +216,7 @@ Write-Host ""
 Write-Host "Installation terminee." -ForegroundColor Green
 Write-Host "InstallRoot          : $InstallRoot"
 Write-Host "MES XML              : $(Join-Path $ProgramDataCimPath 'MES_HAI.xml')"
-Write-Host "MES DLL              : $(Join-Path $bridgeDir 'MES_HAI.dll')"
+Write-Host "MES DLL + deps       : $bridgeDir (MES_HAI.dll, LogLibrary.dll, log4net.dll, Newtonsoft.Json.dll)"
 $bridgeExeDeployed = Join-Path $bridgeDir "MesHaiBridge.exe"
 if (Test-Path -LiteralPath $bridgeExeDeployed -PathType Leaf) {
   Write-Host "MesHaiBridge.exe     : $bridgeExeDeployed (Mode Reel l'utilisera automatiquement)"
